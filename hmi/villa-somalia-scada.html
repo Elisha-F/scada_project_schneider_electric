@@ -1,0 +1,964 @@
+<title>Villa Somalia SCADA</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: ISA-101 style operator console. Fixed top navigation bar, one screen at a time,
+   muted grey process graphics where colour is reserved for state and abnormal conditions. */
+:root{
+  --bg:#e4e7ea; --panel:#f3f5f6; --panel-2:#d8dde1; --line:#b9c1c8; --fg:#1d262e; --muted:#5d6a75;
+  --bar:#1f3442; --bar-fg:#e9f0f4; --accent:#0b7a8f;
+  --closed:#c9302c; --open:#2e8b3e; --live:#1b5fa8; --dead:#9aa4ad; --dc:#b07a12;
+  --ok:#2e8b3e; --warn:#c98a00; --crit:#c9302c; --info:#1b5fa8;
+  --pv:#d89b00; --bess:#0b7a8f; --dg:#7a4fb0; --load:#1d262e;
+  --f-ui:"IBM Plex Sans Condensed","Arial Narrow",Arial,sans-serif;
+  --f-num:"IBM Plex Mono",Consolas,"Courier New",monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141a1f; --panel:#1c242b; --panel-2:#26313a; --line:#3a4752; --fg:#dde5eb; --muted:#93a1ac;
+  --bar:#0d1418; --bar-fg:#dde5eb; --accent:#3fb3c7;
+  --closed:#ef5350; --open:#4cbf5c; --live:#5aa2ef; --dead:#55626d; --dc:#e0a73a;
+  --ok:#4cbf5c; --warn:#f0b429; --crit:#ef5350; --info:#5aa2ef;
+  --pv:#f0b429; --bess:#3fb3c7; --dg:#a988d8; --load:#dde5eb; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141a1f; --panel:#1c242b; --panel-2:#26313a; --line:#3a4752; --fg:#dde5eb; --muted:#93a1ac;
+  --bar:#0d1418; --bar-fg:#dde5eb; --accent:#3fb3c7;
+  --closed:#ef5350; --open:#4cbf5c; --live:#5aa2ef; --dead:#55626d; --dc:#e0a73a;
+  --ok:#4cbf5c; --warn:#f0b429; --crit:#ef5350; --info:#5aa2ef;
+  --pv:#f0b429; --bess:#3fb3c7; --dg:#a988d8; --load:#dde5eb; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:14px;line-height:1.35}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bar)}
+.num,td.n,.kv b{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+button{font:inherit;cursor:pointer}
+button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bar);color:var(--bar-fg)}
+.top-in{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding-block:8px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.brand{display:flex;flex-direction:column;line-height:1.1;min-width:0}
+.brand b{font-size:18px;letter-spacing:.06em;text-transform:uppercase}
+.brand span{font-size:11px;opacity:.7;letter-spacing:.08em;text-transform:uppercase}
+.hdr-right{margin-left:auto;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:12px}
+.hdr-right select{background:transparent;color:var(--bar-fg);border:1px solid #ffffff40;border-radius:3px;padding:3px 4px}
+.hdr-right select option{color:#1d262e}
+.clock{font-family:var(--f-num)}
+.srcl{display:flex;gap:8px}
+.srcl span{display:flex;align-items:center;gap:4px;font-size:11px;letter-spacing:.06em}
+.lamp{width:11px;height:11px;border-radius:50%;background:var(--dead);display:inline-block;border:1px solid #0004}
+.lamp[data-state=on]{background:var(--ok)} .lamp[data-state=warn]{background:var(--warn)} .lamp[data-state=alarm]{background:var(--crit)}
+nav.tabs{display:flex;overflow-x:auto;gap:2px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));scrollbar-width:thin}
+nav.tabs button{background:none;border:0;color:var(--bar-fg);opacity:.72;padding:8px 12px 9px;white-space:nowrap;border-bottom:3px solid transparent;letter-spacing:.05em;text-transform:uppercase;font-size:13px;font-weight:600}
+nav.tabs button[aria-selected=true]{opacity:1;border-bottom-color:var(--accent)}
+nav.tabs button:hover{opacity:1}
+.abanner{display:flex;align-items:center;gap:10px;background:var(--panel-2);color:var(--fg);font-size:12.5px;padding-block:5px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line)}
+.abanner .msg{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:2px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
+.pill[data-state=closed],.pill[data-state=alarm],.pill[data-state=p1]{background:var(--crit);color:#fff;border-color:transparent}
+.pill[data-state=open],.pill[data-state=ok],.pill[data-state=on]{background:var(--ok);color:#fff;border-color:transparent}
+.pill[data-state=warn],.pill[data-state=p2]{background:var(--warn);color:#1d262e;border-color:transparent}
+.pill[data-state=p3],.pill[data-state=info]{background:var(--info);color:#fff;border-color:transparent}
+.pill[data-state=off],.pill[data-state=na]{background:var(--panel-2);color:var(--muted)}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:5px 10px;border-radius:3px;font-size:12.5px;font-weight:600;letter-spacing:.03em}
+.btn:hover{border-color:var(--accent)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.red{background:var(--closed);border-color:var(--closed);color:#fff}
+.btn.grn{background:var(--open);border-color:var(--open);color:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- main ---------- */
+main{padding-block:14px 28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1500px;margin:0 auto}
+.scr-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin-bottom:10px}
+.scr-h h1{font-size:20px;margin:0;letter-spacing:.04em;text-transform:uppercase;text-wrap:balance}
+.scr-h p{margin:0;color:var(--muted);font-size:13px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:3px;min-width:0}
+.box>h2{margin:0;font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;padding:7px 10px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--panel-2)}
+.box>h2 .sp{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.box .bd{padding:10px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px}
+.kpi{background:var(--panel);border:1px solid var(--line);padding:7px 10px;border-radius:3px;border-top:3px solid var(--line)}
+.kpi small{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.kpi b{font-family:var(--f-num);font-size:20px;font-weight:600}
+.kpi i{font-style:normal;color:var(--muted);font-size:12px;margin-left:3px}
+.kpi.pv{border-top-color:var(--pv)} .kpi.bess{border-top-color:var(--bess)} .kpi.dg{border-top-color:var(--dg)} .kpi.load{border-top-color:var(--load)}
+.kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:13px}
+.kv span{color:var(--muted)}
+.kv b{font-weight:500;text-align:right}
+.scroll{overflow-x:auto}
+table.t{border-collapse:collapse;width:100%;font-size:12.5px}
+table.t th{text-align:left;font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);padding:5px 6px;white-space:nowrap;background:var(--panel)}
+table.t td{border-bottom:1px solid var(--line);padding:4px 6px;white-space:nowrap}
+table.t td.n,table.t th.n{text-align:right}
+table.t tr.unack td:first-child{box-shadow:inset 3px 0 var(--crit)}
+.bar{height:8px;background:var(--panel-2);border-radius:2px;overflow:hidden;position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--accent)}
+.note{font-size:12px;color:var(--muted)}
+.tag{font-family:var(--f-num);font-size:11.5px}
+
+/* ---------- SVG process graphics ---------- */
+svg.sld{display:block;width:100%;min-width:1100px;height:auto;font-family:var(--f-ui)}
+svg text{fill:var(--fg);font-size:12px}
+svg .mut{fill:var(--muted);font-size:11px}
+svg .val{font-family:var(--f-num);font-size:12px;font-weight:500}
+svg .ttl{font-weight:700;font-size:12.5px;letter-spacing:.05em}
+svg .w{stroke:var(--dead);stroke-width:2.5;fill:none}
+svg .w[data-state=live]{stroke:var(--live)}
+svg .w.bus{stroke-width:6}
+svg .w.dcw[data-state=live]{stroke:var(--dc)}
+svg .eq{fill:var(--panel);stroke:var(--line);stroke-width:1.2}
+svg .eqs{fill:none;stroke:var(--fg);stroke-width:1.4}
+svg .cb{stroke:var(--fg);stroke-width:1.2;cursor:pointer}
+svg .cb[data-state=closed]{fill:var(--closed)} svg .cb[data-state=open]{fill:var(--open)} svg .cb[data-state=trip]{fill:var(--warn)} svg .cb[data-state=na]{fill:var(--panel-2)}
+svg .cb:hover{stroke:var(--accent);stroke-width:2.5}
+svg .st[data-state=closed]{fill:var(--closed)} svg .st[data-state=open]{fill:var(--open)} svg .st[data-state=trip]{fill:var(--warn)}
+svg .lbl-bg{fill:var(--panel-2)}
+svg .hot{cursor:pointer} svg .hot:hover .eq{stroke:var(--accent);stroke-width:2}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:18px;height:4px;vertical-align:middle;margin-right:5px}
+
+/* ---------- faceplate modal ---------- */
+.modal{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.fp{background:var(--panel);border:1px solid var(--line);width:min(440px,100%);max-height:90%;overflow:auto;border-radius:4px}
+.fp h3{margin:0;padding:9px 12px;background:var(--bar);color:var(--bar-fg);font-size:14px;letter-spacing:.05em;display:flex;align-items:center}
+.fp h3 button{margin-left:auto;background:none;border:0;color:inherit;font-size:18px}
+.fp .bd{padding:12px;display:grid;gap:10px}
+.perm{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:12.5px;align-items:center}
+.perm .ok::before{content:"✔";color:var(--ok);font-weight:700}
+.perm .no::before{content:"✖";color:var(--crit);font-weight:700}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.inp{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center;font-size:13px}
+.inp input,.inp select{width:100%;padding:4px 6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:3px;font-family:var(--f-num)}
+.seq{margin:0;padding-left:20px;display:grid;gap:4px;font-size:13px}
+.seq li[data-state=done]{color:var(--muted)} .seq li[data-state=act]{font-weight:700;color:var(--accent)}
+canvas{width:100%;display:block}
+.strings{display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:3px}
+.strings div{font-family:var(--f-num);font-size:10px;text-align:center;padding:3px 0;border-radius:2px;color:#1d262e}
+.fsearch{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.fsearch input,.fsearch select{padding:5px 8px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:3px;font:inherit}
+.toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));right:max(16px,env(safe-area-inset-right,0px));background:var(--bar);color:var(--bar-fg);padding:8px 14px;border-radius:3px;font-size:13px;z-index:30}
+@media (prefers-reduced-motion:no-preference){.blink{animation:bl 1s steps(2) infinite}@keyframes bl{50%{opacity:.25}}}
+footer{font-size:11.5px;color:var(--muted);text-align:center;padding-bottom:16px}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><b>Villa Somalia · Solar-Hybrid Plant</b><span>11 kV PV 1.516 MWp · BESS 3.34 MWh · DG 550 + 660 kVA</span></div>
+    <div class="srcl" aria-label="Source availability">
+      <span><i class="lamp" data-s="lamp_pv"></i>PV</span>
+      <span><i class="lamp" data-s="lamp_bess"></i>BESS</span>
+      <span><i class="lamp" data-s="lamp_dg"></i>DG</span>
+      <span><i class="lamp" data-s="lamp_bus"></i>11 kV BUS</span>
+    </div>
+    <div class="hdr-right">
+      <label>User level
+        <select id="role">
+          <option value="viewer">Viewer</option>
+          <option value="operator" selected>Operator</option>
+          <option value="engineer">Engineer</option>
+        </select></label>
+      <span class="clock" data-v="clock">--</span>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+</header>
+<div class="abanner" id="abanner">
+  <span class="pill" data-s="ab_prio" data-v="ab_prio">—</span>
+  <span class="msg" data-v="ab_msg">No active alarms</span>
+  <span class="num" data-v="ab_count"></span>
+  <button class="btn" id="ackAll">Acknowledge all</button>
+</div>
+<main id="main"></main>
+<footer>Design mock-up for client approval. Values are simulated from the plant model; tag names and ratings follow drawing BFE/PR/26/01 and the Schneider Electric offer for Villa Somalia.</footer>
+<div id="modalHost"></div>
+
+<script id="plant-model">
+/* =====================================================================
+   PLANT MODEL — single source for screens, simulation and the I/O list.
+   Ratings from drawing BFE/PR/26/01 (Overall SLD, 11 kV switchgear config,
+   transformer stations, communication schematic).
+   ===================================================================== */
+const PLANT = {
+  gis: [
+    {id:'AH1', name:'DG Sets',         ql:'QL11', qf:'QF11', ct:'600/200/200/1A 5P20/0.5/0.2S', relay:'P5M30', sa:true,  kind:'dg'},
+    {id:'AH2', name:'PV In',           ql:'QL12', qf:'QF12', ct:'600/200/200/1A 5P20/0.5/0.2S', relay:'P5M30', sa:true,  kind:'pv'},
+    {id:'AH3', name:'BESS In',         ql:'QL13', qf:'QF13', ct:'600/200/200/1A 5P20/0.5/0.2S', relay:'P5M30', sa:true,  kind:'bess'},
+    {id:'AH4', name:'Out 1 President', ql:'QL14', qf:'QF14', ct:'600/200/200/1A 5P20/0.5/0.2S', relay:'P5M30', sa:true,  kind:'pres'},
+    {id:'AH5', name:'Aux (SAT) Feeder',ql:'QL15', qf:'QF15', ct:'600/100/100/1A 5P20/0.5/0.2S', relay:'P5M30', sa:false, kind:'aux'},
+    {id:'AH6', name:'Out 2 Prime Min.',ql:'QL16', qf:'QF16', ct:'1250/1A 5P20 / 1250/1A 0.5',   relay:'P5M30', sa:true,  kind:'pm'},
+    {id:'AH7', name:'Spare Feeder',    ql:'QL17', qf:'QF17', ct:'1250/1A 5P20 / 1250/1A 0.5',   relay:'P5M30', sa:true,  kind:'spare'},
+    {id:'AH8', name:'NECR Feeder',     ql:'QL18', qf:'QF18', ct:'1250/1A 5P20 / 1250/1A 0.5',   relay:'P5M30', sa:true,  kind:'necr'},
+  ],
+  dg: [
+    {id:'DG1', kva:550, kw:440, acb:'Q2', acbA:800},
+    {id:'DG2', kva:660, kw:528, acb:'Q3', acbA:1000},
+  ],
+  inv: [
+    {id:'NB01', model:'Sungrow SG350HX', kw:350, strings:20},
+    {id:'NB02', model:'Sungrow SG350HX', kw:350, strings:20},
+    {id:'NB03', model:'Sungrow SG350HX', kw:350, strings:20},
+    {id:'NB04', model:'Sungrow SG350HX', kw:350, strings:21},
+  ],
+  bess: {kwh:3340, kw:1000, racks:8, pcs:2, cfg:'416S8P · 3.2 V 314 Ah LFP'},
+  tx: {
+    DG:  {kva:1500, v:'11/0.4 kV',  vec:'Dyn11', lvAcb:'—'},
+    PV:  {kva:1500, v:'11/0.8 kV',  vec:'Dd0',   lvAcb:'1250 A 20 kA'},
+    BESS:{kva:1000, v:'11/0.69 kV', vec:'Dd0',   lvAcb:'1000 A 15 kA'},
+    PRES:{kva:630,  v:'11/0.4 kV',  vec:'Dyn11', lvAcb:'1000 A 31.5 kA'},
+    PM:  {kva:630,  v:'11/0.4 kV',  vec:'Dyn11', lvAcb:'1000 A 31.5 kA'},
+    AUX: {kva:100,  v:'11/0.4 kV',  vec:'Dyn11', lvAcb:'200 A'},
+  },
+  lvdb: [
+    {id:'PRES', name:'LVDB President Office', ways:10, mccbA:250, edge:'Edge I/O NTS ×2 + PAS600 ×2'},
+    {id:'PM',   name:'LVDB Prime Minister Office', ways:10, mccbA:250, edge:'Edge I/O NTS ×1 + PAS600 ×1'},
+  ],
+  fire: [
+    {id:'FZ01', area:'11 kV GIS room',        det:'Smoke + heat',      sup:'FM-200 clean agent'},
+    {id:'FZ02', area:'BESS container',        det:'Smoke, heat, H₂/CO gas', sup:'Aerosol + water-spray interface'},
+    {id:'FZ03', area:'PCS / BESS transformer',det:'Heat',              sup:'Portable / CO₂'},
+    {id:'FZ04', area:'DG enclosure 1',        det:'Heat + flame',      sup:'Aerosol'},
+    {id:'FZ05', area:'DG enclosure 2',        det:'Heat + flame',      sup:'Aerosol'},
+    {id:'FZ06', area:'Control room / UPS',    det:'Smoke',             sup:'FM-200 clean agent'},
+    {id:'FZ07', area:'LVDB President',        det:'Smoke',             sup:'Portable / CO₂'},
+    {id:'FZ08', area:'LVDB Prime Minister',   det:'Smoke',             sup:'Portable / CO₂'},
+  ],
+  ups: [
+    {id:'UPS01', name:'Control room UPS (SCADA, PLC, switches)', kva:6, dc:'—'},
+    {id:'UPS02', name:'RMU President 2 kVA AC220V', kva:2, dc:'—'},
+    {id:'UPS03', name:'RMU Prime Minister 2 kVA AC220V', kva:2, dc:'—'},
+    {id:'DCB01', name:'GIS 110 V DC battery charger (tripping/closing)', kva:0, dc:'110 V DC'},
+  ],
+};
+
+/* ---------- I/O list generator (hard-wired + communicated signals) ---------- */
+function buildIO(){
+  const io=[]; const add=(area,eq,sig,desc,type,src,proto,unit,alarm)=>io.push({tag:`VS_${area}_${eq}_${sig}`.replace(/[^A-Z0-9_]/gi,''),area,eq,desc,type,src,proto,unit:unit||'',alarm:alarm||''});
+  const meas=(area,eq,src,proto,extra)=>{
+    [['IA','Phase A current','A'],['IB','Phase B current','A'],['IC','Phase C current','A'],['IN','Neutral/earth current','A'],
+     ['UAB','Voltage L1-L2','kV'],['UBC','Voltage L2-L3','kV'],['UCA','Voltage L3-L1','kV'],['F','Frequency','Hz','H/L'],
+     ['P','Active power','kW'],['Q','Reactive power','kvar'],['S','Apparent power','kVA'],['PF','Power factor',''],
+     ['EIMP','Active energy import','MWh'],['EEXP','Active energy export','MWh']].forEach(m=>add(area,eq,m[0],`${eq} ${m[1]}`,'AI (comm)',src,proto,m[2],m[3]));
+    (extra||[]).forEach(e=>add(area,eq,e[0],`${eq} ${e[1]}`,e[2]||'AI (comm)',src,proto,e[3],e[4]));
+  };
+  // 11 kV GIS combiner panel — hard-wired to M580 X80 rack, relay data via Modbus TCP
+  PLANT.gis.forEach(g=>{
+    const a='GIS', e=g.id, hw='M580 Rack 2 · BMXDDI3202K', ho='M580 Rack 2 · BMXDDO3202K', r=`Easergy P5M30 ${g.id}`;
+    add(a,e,'QF_CLS',`${g.id} ${g.qf} VCB closed`,'DI',hw,'Hard-wired');
+    add(a,e,'QF_OPN',`${g.id} ${g.qf} VCB open`,'DI',hw,'Hard-wired');
+    add(a,e,'QF_SPR',`${g.id} ${g.qf} spring charged`,'DI',hw,'Hard-wired','','Not charged');
+    add(a,e,'QF_TRP',`${g.id} ${g.qf} tripped (86 lockout)`,'DI',hw,'Hard-wired','','P1');
+    add(a,e,'QL_CLS',`${g.id} ${g.ql} 3-position switch: line`,'DI',hw,'Hard-wired');
+    add(a,e,'QL_ES',`${g.id} ${g.ql} 3-position switch: earthed`,'DI',hw,'Hard-wired','','Info');
+    add(a,e,'LR',`${g.id} Local/Remote selector in remote`,'DI',hw,'Hard-wired');
+    add(a,e,'GAS_LO',`${g.id} SF6 gas pressure low`,'DI',hw,'Hard-wired','','P1');
+    add(a,e,'VPI',`${g.id} Voltage presence (DXN-12Q)`,'DI',hw,'Hard-wired');
+    add(a,e,'MCB_TRP',`${g.id} Aux supply / motor MCB tripped`,'DI',hw,'Hard-wired','','P2');
+    add(a,e,'CMD_CLS',`${g.id} ${g.qf} close command`,'DO',ho,'Hard-wired');
+    add(a,e,'CMD_OPN',`${g.id} ${g.qf} open command`,'DO',ho,'Hard-wired');
+    add(a,e,'RLY_HLTH',`${g.id} relay watchdog healthy`,'DI (comm)',r,'Modbus TCP','','P1');
+    ['50/51 phase overcurrent','50N/51N earth fault','27 undervoltage','59 overvoltage','81 under/over frequency','46 negative sequence','49 thermal overload'].forEach((p,i)=>{
+      add(a,e,`PROT${i+1}_PU`,`${g.id} ${p} pickup`,'DI (comm)',r,'Modbus TCP','','P2');
+      add(a,e,`PROT${i+1}_TRP`,`${g.id} ${p} trip`,'DI (comm)',r,'Modbus TCP','','P1');
+    });
+    meas(a,e,r,'Modbus TCP',[['THDI','Current THD','AI (comm)','%','H'],['OPS','Breaker operation counter','AI (comm)','ops'],['IACC','Cumulative breaking current','AI (comm)','kA²']]);
+  });
+  // NECR
+  add('GIS','NECR','NER_TMP','Neutral earthing resistor 63.5 Ω temperature','AI (comm)','Easergy P5M30 AH8','Modbus TCP','°C','H');
+  add('GIS','NECR','EFT_TRP','Earthing transformer protection trip','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired','','P1');
+  add('GIS','BUS','BUS_LIVE','11 kV busbar live (any VPI)','DI (calc)','M580 CPU','Internal');
+  // Diesel generators
+  PLANT.dg.forEach(d=>{
+    const a='DG', e=d.id, c=`${d.id} genset controller`, p='Modbus RTU (BMXNOM0200)';
+    meas(a,e,c,p,[['RPM','Engine speed','AI (comm)','rpm','H'],['OILP','Lube oil pressure','AI (comm)','bar','L'],['CLT','Coolant temperature','AI (comm)','°C','H'],
+      ['FUEL','Fuel tank level','AI (comm)','%','L'],['BATV','Starter battery voltage','AI (comm)','V','L'],['HRS','Running hours','AI (comm)','h'],['LOAD','Load percentage','AI (comm)','%','H'],
+      ['RUN','Engine running','DI (comm)'],['AUTO','Controller in AUTO','DI (comm)'],['CMN_AL','Common alarm','DI (comm)','','P2'],['CMN_SD','Common shutdown','DI (comm)','','P1'],['EMS','Emergency stop pressed','DI (comm)','','P1'],['FTS','Fail to start','DI (comm)','','P1']]);
+    add(a,e,'ACB_CLS',`${d.id} ${d.acb} ACB closed`,'DI','M580 Rack 2 · BMXDDI3202K','Hard-wired');
+    add(a,e,'ACB_TRP',`${d.id} ${d.acb} ACB tripped`,'DI','M580 Rack 2 · BMXDDI3202K','Hard-wired','','P1');
+    add(a,e,'CMD_START',`${d.id} remote start`,'DO','M580 Rack 2 · BMXDDO3202K','Hard-wired');
+    add(a,e,'CMD_STOP',`${d.id} remote stop`,'DO','M580 Rack 2 · BMXDDO3202K','Hard-wired');
+    add(a,e,'CMD_ACB',`${d.id} ${d.acb} ACB close/open`,'DO','M580 Rack 2 · BMXDDO3202K','Hard-wired');
+    add(a,e,'KW_SP',`${d.id} kW setpoint / base load`,'AO (comm)',c,p,'kW');
+  });
+  meas('DG','LVBUS','PM5320 DG LV bus','Modbus TCP');
+  add('DG','TX','WTI','DG step-up TX 1.5 MVA winding temperature','AI (comm)','PAS600 / TX relay','Modbus TCP','°C','H');
+  add('DG','TX','BUCH','DG step-up TX Buchholz / PRD trip','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired','','P1');
+  // BESS
+  const bs='BESS EMS / BMS', bp='Modbus TCP';
+  [['SOC','State of charge','%','L'],['SOH','State of health','%','L'],['P','Active power (+dis / −chg)','kW'],['Q','Reactive power','kvar'],['ECHG','Energy charged today','kWh'],['EDIS','Energy discharged today','kWh'],
+   ['PCHG_MAX','Max charge power allowed','kW'],['PDIS_MAX','Max discharge power allowed','kW'],['VDC','DC bus voltage','V'],['IDC','DC bus current','A'],['TCELL_MAX','Max cell temperature','°C','H'],['TCELL_MIN','Min cell temperature','°C','L'],
+   ['VCELL_MAX','Max cell voltage','V','H'],['VCELL_MIN','Min cell voltage','V','L'],['HVAC_T','Container air temperature','°C','H'],['HVAC_RH','Container humidity','%','H']].forEach(s=>add('BESS','SYS',s[0],`BESS ${s[1]}`,'AI (comm)',bs,bp,s[2],s[3]));
+  for(let i=1;i<=PLANT.bess.pcs;i++){[['P','Active power','kW'],['Q','Reactive power','kvar'],['UAC','AC voltage','V'],['F','Frequency','Hz'],['TIGBT','IGBT temperature','°C','H']].forEach(s=>add('BESS',`PCS${i}`,s[0],`PCS${i} ${s[1]}`,'AI (comm)',bs,bp,s[2],s[3]));
+    [['RUN','Running'],['GF','Grid-forming mode active'],['FLT','Fault','P1'],['ALM','Warning','P2']].forEach(s=>add('BESS',`PCS${i}`,s[0],`PCS${i} ${s[1]}`,'DI (comm)',bs,bp,'',s[2]));
+    [['CMD_RUN','Start/stop'],['P_SP','Active power setpoint'],['Q_SP','Reactive power setpoint'],['MODE','Mode select GF/GFL']].forEach(s=>add('BESS',`PCS${i}`,s[0],`PCS${i} ${s[1]}`,'AO (comm)',bs,bp));}
+  for(let r=1;r<=PLANT.bess.racks;r++){[['V','Rack voltage','V'],['I','Rack current','A'],['SOC','Rack SOC','%'],['TMAX','Rack max temp','°C','H'],['VMAX','Max cell V','V','H'],['VMIN','Min cell V','V','L']].forEach(s=>add('BESS',`RACK${r}`,s[0],`Rack ${r} ${s[1]}`,'AI (comm)',bs,bp,s[2],s[3]));
+    add('BESS',`RACK${r}`,'DCSW',`Rack ${r} DC contactor closed`,'DI (comm)',bs,bp);}
+  add('BESS','LV','ACB_CLS','BESS LV ACB 1000 A closed','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired');
+  add('BESS','LV','ACB_TRP','BESS LV ACB tripped','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired','','P1');
+  add('BESS','LV','CMD_ACB','BESS LV ACB close/open','DO','M580 Rack 2 · BMXDDO3202K','Hard-wired');
+  meas('BESS','LVM','PM5320 BESS LV','Modbus TCP');
+  add('BESS','FIRE','FIRE_ALM','BESS fire alarm (container FACP)','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired','','P1');
+  add('BESS','FIRE','GAS_ALM','BESS off-gas detection (H₂/CO) alarm','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired','','P1');
+  add('BESS','FIRE','SUP_REL','BESS suppression released','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired','','P1');
+  add('BESS','SYS','ESD','BESS emergency stop active','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired','','P1');
+  add('BESS','SYS','CMD_ESD','BESS emergency trip','DO','M580 Rack 2 · BMXDDO3202K','Hard-wired');
+  // PV inverters (communication schematic: RS485 daisy chain to PLC box)
+  PLANT.inv.forEach((v,i)=>{
+    const a='PV', e=`INV_${v.id}`, s=`${v.model} ${v.id}`, p='Modbus RTU via NTSFMB0120K';
+    [['PAC','AC active power','kW'],['QAC','AC reactive power','kvar'],['UAC','AC line voltage','V'],['IAC','AC current','A'],['F','Grid frequency','Hz'],['PDC','DC input power','kW'],
+     ['UDC','DC bus voltage','V'],['EDAY','Energy today','kWh'],['ETOT','Energy total','MWh'],['TINT','Internal temperature','°C','H'],['RISO','Insulation resistance','kΩ','L'],['STATE','Operating state code',''],['FCODE','Fault code','']].forEach(m=>add(a,e,m[0],`${v.id} ${m[1]}`,'AI (comm)',s,p,m[2],m[3]));
+    for(let k=1;k<=v.strings;k++) add(a,e,`STR${String(k).padStart(2,'0')}_I`,`${v.id}-${String(k).padStart(2,'0')} string current`,'AI (comm)',s,p,'A','Deviation');
+    add(a,e,'P_LIM','Active power limit (curtailment)','AO (comm)',s,p,'%');
+    add(a,e,'Q_SP','Reactive power / PF setpoint','AO (comm)',s,p);
+    add(a,e,'CMD_ONOFF','Inverter start/stop','AO (comm)',s,p);
+    add(a,e,'MCCB_CLS',`${v.id} AC MCCB 400 A closed`,'DI',`Edge I/O NTS PV area ${i+1}`,'Hard-wired');
+    add(a,e,'MCCB_TRP',`${v.id} AC MCCB tripped`,'DI',`Edge I/O NTS PV area ${i+1}`,'Hard-wired','','P2');
+    add(a,e,'DCSW',`${v.id} DC disconnect closed`,'DI',`Edge I/O NTS PV area ${i+1}`,'Hard-wired');
+    add(a,e,'SPD',`${v.id} AC/DC SPD failed`,'DI',`Edge I/O NTS PV area ${i+1}`,'Hard-wired','','P3');
+    add(a,e,'ENC_T',`${v.id} combiner enclosure temperature (TH110)`,'AI (comm)',`PAS600 PV area ${i+1}`,'Modbus TCP','°C','H');
+    add(a,e,'ENC_RH',`${v.id} combiner enclosure humidity (CL110)`,'AI (comm)',`PAS600 PV area ${i+1}`,'Modbus TCP','%','H');
+  });
+  add('PV','LV','ACB_CLS','PV LV ACB 1250 A closed','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired');
+  add('PV','LV','ACB_TRP','PV LV ACB tripped','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired','','P1');
+  add('PV','LV','CMD_ACB','PV LV ACB close/open','DO','M580 Rack 2 · BMXDDO3202K','Hard-wired');
+  meas('PV','LVM','PM5320 PV LV','Modbus TCP');
+  // Weather station
+  [['GHI','Plane-of-array irradiance (SMP12-A)','W/m²'],['TAMB','Ambient temperature','°C'],['TMOD','Module temperature','°C','H'],['WS','Wind speed (Gill WindSonic)','m/s','H'],['WD','Wind direction','°'],['HIRR','Irradiation today','kWh/m²'],['COMM','Bluelog XM5000 comm healthy','']].forEach(m=>add('MET','WS',m[0],`Weather ${m[1]}`,m[0]==='COMM'?'DI (comm)':'AI (comm)','Meteocontrol blue\'Log XM 5000','Modbus TCP',m[2],m[3]));
+  // Transformer stations & LVDBs
+  ['PRES','PM'].forEach(id=>{
+    const lv=PLANT.lvdb.find(l=>l.id===id), a='LV';
+    [['QL1','AH1 incomer switch'],['QL2','AH2 outgoing switch'],['QF','AH3 transformer VCB QF11'],['QK_ES','AH3 earthing switch QK11']].forEach(s=>add(a,`RMU_${id}`,s[0]+'_CLS',`RMU ${id} ${s[1]} closed`,'DI',`Edge I/O NTS ${id}`,'Hard-wired'));
+    add(a,`RMU_${id}`,'ST260E_TRP',`RMU ${id} ST260E relay trip`,'DI',`Edge I/O NTS ${id}`,'Hard-wired','','P1');
+    add(a,`RMU_${id}`,'UPS_FLT',`RMU ${id} 2 kVA UPS fault/on battery`,'DI',`Edge I/O NTS ${id}`,'Hard-wired','','P2');
+    add(a,`TX_${id}`,'WTI',`TX ${id} 630 kVA winding temperature`,'AI (comm)',`PAS600 ${id}`,'Modbus TCP','°C','H');
+    add(a,`TX_${id}`,'OTI_TRP',`TX ${id} temperature trip`,'DI',`Edge I/O NTS ${id}`,'Hard-wired','','P1');
+    add(a,`LVDB_${id}`,'INC_CLS',`LVDB ${id} incomer ACB 1000 A closed`,'DI',`Edge I/O NTS ${id}`,'Hard-wired');
+    add(a,`LVDB_${id}`,'INC_TRP',`LVDB ${id} incomer ACB tripped`,'DI',`Edge I/O NTS ${id}`,'Hard-wired','','P1');
+    add(a,`LVDB_${id}`,'CMD_INC',`LVDB ${id} incomer close/open`,'DO',`Edge I/O NTS ${id}`,'Hard-wired');
+    for(let w=1;w<=lv.ways;w++){
+      add(a,`LVDB_${id}`,`MCCB${w}_CLS`,`LVDB ${id} outgoing MCCB ${w} closed`,'DI',`Edge I/O NTS ${id}`,'Hard-wired');
+      add(a,`LVDB_${id}`,`MCCB${w}_TRP`,`LVDB ${id} outgoing MCCB ${w} tripped`,'DI',`Edge I/O NTS ${id}`,'Hard-wired','','P2');
+      add(a,`LVDB_${id}`,`MCCB${w}_SHED`,`LVDB ${id} MCCB ${w} shunt trip (load shed)`,'DO',`Edge I/O NTS ${id}`,'Hard-wired');
+    }
+    meas(a,`LVDB_${id}`,`PM5320 LVDB ${id}`,'Modbus TCP',[['THDU','Voltage THD','AI (comm)','%','H']]);
+    add(a,`LVDB_${id}`,'ENC_T',`LVDB ${id} enclosure temperature (TH110)`,'AI (comm)',`PAS600 ${id}`,'Modbus TCP','°C','H');
+    add(a,`LVDB_${id}`,'ENC_RH',`LVDB ${id} enclosure humidity (CL110)`,'AI (comm)',`PAS600 ${id}`,'Modbus TCP','%','H');
+  });
+  add('AUX','TX','FUSE','Aux TX XRNT-3A fuse blown','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired','','P2');
+  add('AUX','PNL','INC_CLS','Aux panel 200 A incomer closed','DI','M580 Rack 2 · BMXDDI3202K','Hard-wired');
+  // UPS / DC
+  PLANT.ups.forEach(u=>{[['ONBAT','On battery','DI (comm)','','P2'],['FLT','Fault','DI (comm)','','P1'],['BYP','On bypass','DI (comm)','','P3'],['BATT','Battery charge','AI (comm)','%','L'],['AUT','Autonomy remaining','AI (comm)','min','L'],['LOAD','Load','AI (comm)','%','H']].forEach(s=>add('AUX',u.id,s[0],`${u.id} ${s[1]}`,s[2],`${u.id} SNMP/Modbus card`,'Modbus TCP',s[3],s[4]));});
+  // Fire detection & suppression
+  PLANT.fire.forEach(f=>{
+    [['FIRE','Fire alarm','P1'],['PRE','Pre-alarm','P2'],['FLT','Zone fault','P2'],['DIS','Zone disabled','P3']].forEach(s=>add('FIRE',f.id,s[0],`${f.area} ${s[1]}`,'DI','M580 Rack 2 · BMXDDI3202K / FACP','Hard-wired','',s[2]));
+    if(!/Portable/.test(f.sup)){add('FIRE',f.id,'REL',`${f.area} suppression released`,'DI','FACP','Hard-wired','','P1');add('FIRE',f.id,'INH',`${f.area} suppression inhibited (manual/maintenance)`,'DI','FACP','Hard-wired','','P2');}
+  });
+  add('FIRE','FACP','COMMON_TRIP','Fire — trip HVAC & BESS (PLC command)','DO','M580 Rack 2 · BMXDDO3202K','Hard-wired');
+  // Control system diagnostics
+  ['M580 CPU','BMENOC0311 #1','BMENOC0311 #2','BMENOC0321','BMECRA31210 drop','MCSESM083 SW1','MCSESM083 SW2','BMXNOM0200'].forEach((d,i)=>add('SYS',`DEV${i+1}`,'HLTH',`${d} healthy`,'DI (diag)',d,'EtherNet/IP','','P2'));
+  for(let i=1;i<=8;i++) add('SYS',`RLY${i}`,'COMM',`P5M30 AH${i} communication OK`,'DI (diag)','BMENOC0311','Modbus TCP','','P2');
+  for(let i=1;i<=7;i++) add('SYS',`NTS${i}`,'COMM',`Edge I/O NTS island ${i} communication OK`,'DI (diag)','BMENOC0311','EtherNet/IP','','P2');
+  return io;
+}
+if(typeof module!=='undefined') module.exports={PLANT,buildIO};
+</script>
+
+<script>
+/* =====================================================================
+   SIMULATION — energy balance of the islanded 11 kV microgrid.
+   BESS PCS is grid-forming (sets V/f); DGs start on low SOC; PV curtails
+   when BESS cannot absorb the surplus.
+   ===================================================================== */
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const fmt=(x,d=0)=>(x==null||isNaN(x))?'—':Number(x).toLocaleString('en-GB',{minimumFractionDigits:d,maximumFractionDigits:d});
+const rnd=(a=1)=>(Math.random()-0.5)*2*a;
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+
+const ST={
+  brk:{AH1:true,AH2:true,AH3:true,AH4:true,AH5:true,AH6:true,AH7:false,AH8:true},
+  es:{AH1:false,AH2:false,AH3:false,AH4:false,AH5:false,AH6:false,AH7:true,AH8:false},
+  lr:{AH1:'REMOTE',AH2:'REMOTE',AH3:'REMOTE',AH4:'REMOTE',AH5:'REMOTE',AH6:'REMOTE',AH7:'LOCAL',AH8:'REMOTE'},
+  trip:{},
+  dg:[{mode:'AUTO',run:false,acb:true,fuel:64,hours:1824.6,startT:0},{mode:'AUTO',run:false,acb:true,fuel:22,hours:1610.2,startT:0}],
+  acb:{PV:true,BESS:true,PRES:true,PM:true,AUX:true},
+  inv:[{on:true},{on:true},{on:true},{on:true}],
+  pcs:[{on:true},{on:true}],
+  soc:68.4, soh:99.1,
+  mccb:{PRES:Array(10).fill(true),PM:Array(10).fill(true)},
+  ppc:{mode:'AUTO',socStart:30,socStop:85,socMin:15,pvLimit:100,curtail:true,shed:true,dgMinLoad:30},
+  fire:{}, upsOnBat:{},
+  e:{pv:0,dg:0,chg:0,dis:0,load:0},
+  t0:Date.now(),
+};
+PLANT.fire.forEach(f=>ST.fire[f.id]={state:'NORMAL',inhibit:f.id==='FZ04'});
+const strBase=[]; PLANT.inv.forEach((v,i)=>{strBase[i]=Array.from({length:v.strings},(_,k)=>0.97+Math.random()*0.05); if(i===2) strBase[i][13]=0.42;});
+
+let V={}, S={}, M={}; // values (text), states, model numbers
+function hourNow(){const d=new Date();return ((d.getUTCHours()+3)%24)+d.getUTCMinutes()/60+d.getUTCSeconds()/3600;}
+function irr(h,noise=true){const s=Math.sin(Math.PI*(h-6.1)/12.2);return s>0?Math.max(0,1020*Math.pow(s,1.25)*(noise?(0.93+0.07*Math.sin(Date.now()/17000)+rnd(0.015)):1)):0;}
+function loadProfile(h,base,peak){return base+peak*(h>7&&h<19?Math.sin(Math.PI*(h-7)/12):0)+0.15*peak*Math.sin(h/3);}
+
+function step(dt){
+  const h=hourNow(), b=ST.brk, P={};
+  P.h=h; P.G=irr(h); P.tamb=27+5*Math.sin(Math.PI*(h-9)/12)+rnd(0.1); P.tmod=P.tamb+P.G*0.028; P.ws=4.5+1.5*Math.sin(Date.now()/40000)+rnd(0.3); P.wd=(135+20*Math.sin(Date.now()/90000)+360)%360;
+  const presOn=b.AH4&&ST.acb.PRES, pmOn=b.AH6&&ST.acb.PM;
+  const presOut=ST.mccb.PRES.filter(Boolean).length/10, pmOut=ST.mccb.PM.filter(Boolean).length/10;
+  // sources available to form the bus
+  const bessOK=b.AH3&&ST.acb.BESS&&ST.pcs.some(p=>p.on)&&ST.soc>ST.ppc.socMin*0.5&&!ST.trip.AH3;
+  // DG auto logic (PPC)
+  if(ST.ppc.mode==='AUTO'){
+    ST.dg.forEach((d,i)=>{ if(d.mode!=='AUTO') return;
+      if(!d.run && ST.soc<ST.ppc.socStart && (i===0 || ST.soc<ST.ppc.socStart-8)){d.run=true;d.startT=Date.now();logEv('PPC',`${PLANT.dg[i].id}`,`Auto start: SOC ${fmt(ST.soc,1)} % < ${ST.ppc.socStart} %`);}
+      if(d.run && ST.soc>=ST.ppc.socStop){d.run=false;logEv('PPC',`${PLANT.dg[i].id}`,`Auto stop: SOC ${fmt(ST.soc,1)} % ≥ ${ST.ppc.socStop} %`);}
+    });
+  }
+  const dgOn=ST.dg.map((d,i)=>d.run&&d.acb&&b.AH1&&!ST.trip.AH1&&d.fuel>1);
+  const busLive=bessOK||dgOn.some(Boolean);
+  P.busLive=busLive;
+  P.loadPres=busLive&&presOn?loadProfile(h,210,140)*presOut+rnd(4):0;
+  P.loadPM=busLive&&pmOn?loadProfile(h,160,110)*pmOut+rnd(3):0;
+  P.loadAux=busLive&&b.AH5&&ST.acb.AUX?22+rnd(1.5):0;
+  P.loss=busLive?6+0.012*(P.loadPres+P.loadPM):0;
+  P.load=P.loadPres+P.loadPM+P.loadAux+P.loss;
+  // PV available
+  const pvPath=busLive&&b.AH2&&ST.acb.PV&&!ST.trip.AH2;
+  P.inv=PLANT.inv.map((v,i)=>{const on=ST.inv[i].on&&pvPath;const avail=on?Math.min(v.kw,PLANT.inv.length&&1516*P.G/1000*0.84/4*(i===2?0.975:1)):0;return {on,avail,p:avail};});
+  let pvAvail=P.inv.reduce((a,x)=>a+x.avail,0)*ST.ppc.pvLimit/100;
+  // DG dispatch
+  P.dg=PLANT.dg.map((d,i)=>({on:dgOn[i],p:0}));
+  const nDG=dgOn.filter(Boolean).length;
+  if(nDG){const cap=PLANT.dg.reduce((a,d,i)=>a+(dgOn[i]?d.kw:0),0);
+    const want=clamp(P.load-pvAvail+(ST.soc<ST.ppc.socStop?350:0),cap*ST.ppc.dgMinLoad/100,cap*0.9);
+    PLANT.dg.forEach((d,i)=>{if(dgOn[i]) P.dg[i].p=want*d.kw/cap+rnd(2);});}
+  const dgP=P.dg.reduce((a,x)=>a+x.p,0);
+  // BESS balances; curtail PV if BESS cannot absorb
+  const chgMax=bessOK?(ST.soc>=97?0:PLANT.bess.kw):0;
+  let bessP=P.load-pvAvail-dgP;
+  let pvP=pvAvail;
+  if(bessP<-chgMax){pvP=Math.max(0,pvAvail+(bessP+chgMax));bessP=-chgMax;}
+  if(!bessOK){ // DG alone: PV limited to load
+    pvP=Math.min(pvP,Math.max(0,P.load-dgP*0)); bessP=0;
+    if(nDG){const rem=P.load-pvP;P.dg.forEach((x,i)=>{if(dgOn[i]) x.p=Math.max(0,rem)*PLANT.dg[i].kw/PLANT.dg.reduce((a,d,j)=>a+(dgOn[j]?d.kw:0),0);});}
+  }
+  P.curtail=pvAvail-pvP; P.pv=pvP; P.bess=bessP; P.dgP=P.dg.reduce((a,x)=>a+x.p,0);
+  const scale=pvAvail>0?pvP/pvAvail*ST.ppc.pvLimit/100:0;
+  P.inv.forEach(x=>x.p=x.avail*scale);
+  // SOC
+  ST.soc=clamp(ST.soc-(bessP>0?bessP/0.96:bessP*0.96)*dt/3600/PLANT.bess.kwh*100,0,100);
+  ST.dg.forEach((d,i)=>{if(dgOn[i]){d.fuel=Math.max(0,d.fuel-P.dg[i].p*dt/3600*0.27/1000*100/1.2);d.hours+=dt/3600;}});
+  ST.e.pv+=P.pv*dt/3600; ST.e.dg+=P.dgP*dt/3600; ST.e.load+=P.load*dt/3600; if(bessP>0) ST.e.dis+=bessP*dt/3600; else ST.e.chg+=-bessP*dt/3600;
+  P.f=busLive?50+rnd(0.02)+(bessOK?0:rnd(0.05)):0; P.u=busLive?11.02+rnd(0.03):0;
+  // feeder flows
+  const feed={AH1:P.dgP,AH2:P.pv,AH3:P.bess,AH4:P.loadPres*1.01,AH5:P.loadAux,AH6:P.loadPM*1.01,AH7:0,AH8:busLive&&b.AH8?0.4:0};
+  P.feed={}; for(const k in feed){const p=b[k]?feed[k]:0;P.feed[k]={p,q:p*0.18*(k==='AH2'?0.2:1),i:Math.abs(p)/(Math.sqrt(3)*Math.max(P.u,1)*0.97)};}
+  P.bessTemp=24+Math.abs(bessP)/1000*6+rnd(0.2);
+  P.enc={PRES:{t:34+rnd(0.3),rh:56+rnd(0.5)},PM:{t:36.5+rnd(0.3),rh:77.5+rnd(0.5)}};
+  M=P;
+}
+
+/* ---------- alarms & events ---------- */
+const ALARMS=[]; const EVENTS=[];
+function nowStr(d=new Date()){const z=new Date(d.getTime()+3*3600e3);return z.toISOString().replace('T',' ').slice(0,19);}
+function logEv(area,eq,txt,user){EVENTS.unshift({t:nowStr(),area,eq,txt,user:user||'SYSTEM'});if(EVENTS.length>300)EVENTS.pop();}
+function setAlarm(id,active,prio,area,tag,desc){
+  let a=ALARMS.find(x=>x.id===id);
+  if(active&&(!a||a.state==='RTN'&&a.ack)){ if(a) ALARMS.splice(ALARMS.indexOf(a),1);
+    ALARMS.unshift({id,prio,area,tag,desc,t:nowStr(),state:'ACTIVE',ack:false}); logEv(area,tag,`ALARM P${prio}: ${desc}`);}
+  else if(!active&&a&&a.state==='ACTIVE'){a.state='RTN';logEv(area,tag,`Return to normal: ${desc}`); if(a.ack) ALARMS.splice(ALARMS.indexOf(a),1);}
+}
+function evalAlarms(){
+  setAlarm('bus',!M.busLive,1,'GIS','VS_GIS_BUS_BUS_LIVE','11 kV busbar dead — no grid-forming source');
+  setAlarm('soclo',ST.soc<20,1,'BESS','VS_BESS_SYS_SOC',`BESS SOC low (${fmt(ST.soc,1)} %)`);
+  setAlarm('socw',ST.soc<ST.ppc.socStart,2,'BESS','VS_BESS_SYS_SOC',`BESS SOC below DG start threshold`);
+  ST.dg.forEach((d,i)=>setAlarm('fuel'+i,d.fuel<25,2,'DG',`VS_DG_${PLANT.dg[i].id}_FUEL`,`${PLANT.dg[i].id} fuel level low (${fmt(d.fuel,0)} %)`));
+  ST.inv.forEach((v,i)=>setAlarm('inv'+i,!v.on,2,'PV',`VS_PV_INV_${PLANT.inv[i].id}_STATE`,`Inverter ${PLANT.inv[i].id} stopped`));
+  setAlarm('str',M.G>150,3,'PV','VS_PV_INV_NB03_STR14_I','String NB03-14 current 58 % below array average');
+  setAlarm('rhpm',M.enc.PM.rh>75,3,'LV','VS_LV_LVDB_PM_ENC_RH',`LVDB Prime Minister enclosure humidity high (${fmt(M.enc.PM.rh,0)} %RH)`);
+  PLANT.gis.forEach(g=>setAlarm('trip'+g.id,!!ST.trip[g.id],1,'GIS',`VS_GIS_${g.id}_QF_TRP`,`${g.id} ${g.name} VCB tripped`));
+  setAlarm('curt',M.curtail>50,3,'PV','VS_PV_LV_P','PV curtailed by PPC (BESS at charge limit)');
+  setAlarm('fz04',ST.fire.FZ04.inhibit,2,'FIRE','VS_FIRE_FZ04_INH','DG enclosure 1 suppression inhibited (maintenance)');
+  PLANT.fire.forEach(f=>setAlarm('fire'+f.id,ST.fire[f.id].state==='FIRE',1,'FIRE',`VS_FIRE_${f.id}_FIRE`,`FIRE ALARM — ${f.area}`));
+}
+
+/* ---------- history for trends ---------- */
+const HIST=[]; (function seed(){const now=Date.now();let soc=52,dgOn=false;for(let k=288;k>0;k--){const t=now-k*300e3;const d=new Date(t);const h=((d.getUTCHours()+3)%24)+d.getUTCMinutes()/60;
+  const G=irr(h,false)*(0.92+0.08*Math.sin(k/7)); const load=loadProfile(h,210,140)+loadProfile(h,160,110)+28; let pv=Math.min(1400,1516*G/1000*0.84); if(soc<30)dgOn=true;if(soc>=85)dgOn=false;let dg=dgOn?Math.min(950,load+350):0; let bess=load-pv-dg; if(bess<-1000){pv+=bess+1000;bess=-1000;}
+  soc=clamp(soc-bess*300/3600/3340*100,5,100); HIST.push({t,load,pv,dg,bess,soc,G});}ST.soc=soc;ST.dg[0].run=dgOn;})();
+let lastHist=0;
+
+/* =====================================================================
+   VIEW LAYER — screens render once; bound fields refresh every tick.
+   data-v="key" → textContent, data-s="key" → data-state attribute.
+   ===================================================================== */
+const v=k=>`<span data-v="${k}">—</span>`;
+const sv=(k,cls='pill')=>`<span class="${cls}" data-s="${k}" data-v="${k}">—</span>`;
+const kv=rows=>`<div class="kv">${rows.map(r=>`<span>${r[0]}</span><b data-v="${r[1]}">—</b>`).join('')}</div>`;
+const role=()=>$('#role').value;
+
+function compute(){
+  const P=M, b=ST.brk; V={}; S={};
+  V.clock=nowStr()+' EAT';
+  S.lamp_pv=M.pv>1?'on':(ST.inv.some(x=>!x.on)?'warn':'off'); S.lamp_bess=ST.brk.AH3&&ST.acb.BESS?(ST.soc<20?'alarm':'on'):'off';
+  S.lamp_dg=ST.dg.some(d=>d.run)?'on':'off'; S.lamp_bus=P.busLive?'on':'alarm';
+  // KPIs
+  V.k_load=fmt(P.load); V.k_pv=fmt(P.pv); V.k_bess=fmt(P.bess); V.k_dg=fmt(P.dgP); V.k_soc=fmt(ST.soc,1); V.k_f=fmt(P.f,2); V.k_u=fmt(P.u,2); V.k_G=fmt(P.G);
+  V.k_ren=fmt(P.load>0?clamp((P.pv+Math.max(0,P.bess)*0.8)/P.load*100,0,100):0); V.k_curt=fmt(P.curtail);
+  V.k_bessdir=P.bess>5?'Discharging':P.bess<-5?'Charging':'Idle';
+  // GIS feeders
+  PLANT.gis.forEach(g=>{const f=P.feed[g.id],id=g.id;
+    S[`cb_${id}`]=ST.trip[id]?'trip':b[id]?'closed':'open'; V[`cbt_${id}`]=ST.trip[id]?'TRIPPED':b[id]?'Closed':'Open'; S[`cbt_${id}`]=S[`cb_${id}`]==='trip'?'warn':S[`cb_${id}`];
+    S[`es_${id}`]=ST.es[id]?'closed':'open'; V[`es_${id}`]=ST.es[id]?'Earthed':'Not earthed'; S[`esp_${id}`]=ST.es[id]?'warn':'off'; V[`esp_${id}`]=ST.es[id]?'Earthed':'Line';
+    V[`lr_${id}`]=ST.lr[id]; S[`lr_${id}`]=ST.lr[id]==='REMOTE'?'off':'warn';
+    V[`p_${id}`]=fmt(f.p)+' kW'; V[`i_${id}`]=fmt(f.i,1)+' A'; V[`q_${id}`]=fmt(f.q)+' kvar';
+    V[`ia_${id}`]=fmt(f.i*(1+rnd(0.01)),1); V[`ib_${id}`]=fmt(f.i*(1+rnd(0.01)),1); V[`ic_${id}`]=fmt(f.i*(1+rnd(0.01)),1);
+    V[`u_${id}`]=fmt(b[id]?P.u:0,2); V[`f_${id}`]=fmt(b[id]?P.f:0,2); V[`pf_${id}`]=fmt(f.p?Math.abs(f.p)/Math.hypot(f.p,f.q):0,3);
+    S[`w_${id}`]=P.busLive&&b[id]&&!ST.trip[id]?'live':'dead'; V[`rly_${id}`]=ST.trip[id]?'TRIP 50/51':'Healthy'; S[`rly_${id}`]=ST.trip[id]?'alarm':'ok';
+    V[`vpi_${id}`]=S[`w_${id}`]==='live'?'Live':'Dead'; S[`vpi_${id}`]=S[`w_${id}`]==='live'?'info':'off';
+  });
+  S.w_bus=P.busLive?'live':'dead'; V.busU=fmt(P.u,2)+' kV'; V.busF=fmt(P.f,2)+' Hz';
+  // DG
+  PLANT.dg.forEach((d,i)=>{const s=ST.dg[i],p=P.dg[i].p,id=d.id,run=s.run;
+    V[`dg_p_${i}`]=fmt(p); V[`dg_load_${i}`]=fmt(p/d.kw*100); V[`dg_kva_${i}`]=fmt(p/0.8);
+    V[`dg_u_${i}`]=run?fmt(400+rnd(2)):'0'; V[`dg_f_${i}`]=run?fmt(P.f||50,2):'0.00'; V[`dg_i_${i}`]=fmt(p/(1.732*0.4*0.85));
+    V[`dg_rpm_${i}`]=run?fmt(1500+rnd(3)):'0'; V[`dg_oil_${i}`]=run?fmt(4.2+rnd(0.05),1):'0.0'; V[`dg_clt_${i}`]=fmt(run?82+rnd(0.5):34,0);
+    V[`dg_fuel_${i}`]=fmt(s.fuel,0); V[`dg_bat_${i}`]=fmt(run?27.6:25.4,1); V[`dg_hrs_${i}`]=fmt(s.hours,1); V[`dg_mode_${i}`]=s.mode; S[`dg_mode_${i}`]=s.mode==='AUTO'?'info':s.mode==='OFF'?'off':'warn';
+    V[`dg_st_${i}`]=run?'Running':'Standby'; S[`dg_st_${i}`]=run?'on':'off';
+    S[`cb_${d.acb}`]=s.acb?'closed':'open'; V[`cbt_${d.acb}`]=s.acb?'Closed':'Open'; S[`cbt_${d.acb}`]=S[`cb_${d.acb}`];
+    S[`w_dg${i}`]=run&&s.acb&&P.busLive?'live':'dead'; S[`w_dgsrc${i}`]=run?'live':'dead';
+    S[`fuelbar_${i}`]=s.fuel<25?'warn':'ok';
+  });
+  S.w_dglv=P.busLive&&b.AH1?'live':'dead';
+  // PV
+  P.inv.forEach((x,i)=>{const d=PLANT.inv[i];V[`inv_p_${i}`]=fmt(x.p,1);V[`inv_pi_${i}`]=fmt(x.p);V[`inv_st_${i}`]=!ST.inv[i].on?'Stopped':x.p>0.5?(P.curtail>5?'Derated':'Running'):(M.G<5?'Standby (night)':'Waiting');
+    S[`inv_st_${i}`]=!ST.inv[i].on?'alarm':x.p>0.5?(P.curtail>5?'warn':'on'):'off';
+    V[`inv_udc_${i}`]=x.p>0?fmt(1080+rnd(5)):fmt(M.G>5?1240:0); V[`inv_pdc_${i}`]=fmt(x.p/0.985,1); V[`inv_eday_${i}`]=fmt(ST.e.pv/4*(i===2?0.975:1)+[1120,1134,1096,1141][i]*clamp((P.h-6)/12,0,1),0);
+    V[`inv_t_${i}`]=fmt(38+x.p/350*16+rnd(0.3),1); V[`inv_iso_${i}`]=fmt(1850+i*90); V[`inv_load_${i}`]=fmt(x.p/d.kw*100);
+    S[`w_inv${i}`]=x.on?'live':'dead';});
+  S.cb_PVACB=ST.acb.PV?'closed':'open'; S.cb_BESSACB=ST.acb.BESS?'closed':'open'; S.cb_PRESACB=ST.acb.PRES?'closed':'open'; S.cb_PMACB=ST.acb.PM?'closed':'open'; S.cb_AUXACB=ST.acb.AUX?'closed':'open';
+  ['PV','BESS','PRES','PM','AUX'].forEach(k=>{V[`cbt_${k}ACB`]=ST.acb[k]?'Closed':'Open';S[`cbt_${k}ACB`]=S[`cb_${k}ACB`];});
+  S.w_pvlv=S.w_AH2==='live'&&ST.acb.PV?'live':'dead'; S.w_pvdc=M.G>5?'live':'dead';
+  S.w_besslv=S.w_AH3==='live'&&ST.acb.BESS?'live':'dead'; S.w_preslv=S.w_AH4==='live'&&ST.acb.PRES?'live':'dead'; S.w_pmlv=S.w_AH6==='live'&&ST.acb.PM?'live':'dead'; S.w_auxlv=S.w_AH5==='live'&&ST.acb.AUX?'live':'dead';
+  V.pv_tot=fmt(P.pv); V.pv_avail=fmt(P.pv+P.curtail); V.pv_eday=fmt(P.inv.reduce((a,x,i)=>a,0)+[0,1,2,3].reduce((a,i)=>a+Number(String(V[`inv_eday_${i}`]).replace(/,/g,'')),0));
+  V.pv_pr=fmt(P.G>50?clamp(P.pv/(1516*P.G/1000)*100,0,100):0,1); V.pv_spec=fmt(P.pv/1516*1000/1000,3);
+  V.met_G=fmt(P.G); V.met_tamb=fmt(P.tamb,1); V.met_tmod=fmt(P.tmod,1); V.met_ws=fmt(P.ws,1); V.met_wd=fmt(P.wd); V.met_hirr=fmt(clamp((P.h-6)/12,0,1)*6.1,2);
+  // BESS
+  V.b_soc=fmt(ST.soc,1); V.b_soh=fmt(ST.soh,1); V.b_p=fmt(P.bess); V.b_q=fmt(P.bess*0.05+40); V.b_kwh=fmt(ST.soc/100*PLANT.bess.kwh);
+  V.b_mode=ST.pcs.some(p=>p.on)?'Grid-forming (V/f)':'Stopped'; S.b_mode=ST.pcs.some(p=>p.on)?'on':'alarm';
+  V.b_vdc=fmt(1331+ST.soc*0.7+(-P.bess)*0.02); V.b_idc=fmt(P.bess*1000/(1331+ST.soc*0.7)); V.b_t=fmt(P.bessTemp,1); V.b_hvac=fmt(23.5+rnd(0.2),1); V.b_rh=fmt(48+rnd(0.5)); V.b_chg=fmt(ST.e.chg+410); V.b_dis=fmt(ST.e.dis+690);
+  V.b_pmax=fmt(ST.soc>97?0:1000); V.b_dmax=fmt(ST.soc<ST.ppc.socMin?0:1000);
+  ST.pcs.forEach((p,i)=>{V[`pcs_p_${i}`]=fmt(p.on?P.bess/ST.pcs.filter(x=>x.on).length:0);V[`pcs_st_${i}`]=p.on?'Running GF':'Stopped';S[`pcs_st_${i}`]=p.on?'on':'alarm';V[`pcs_t_${i}`]=fmt(41+Math.abs(P.bess)/1000*12+rnd(0.3),1);V[`pcs_u_${i}`]=fmt(p.on?690+rnd(1):0);});
+  for(let r=0;r<8;r++){const so=ST.soc+[0.4,-0.2,0.1,-0.6,0.3,0,-0.3,0.2][r];V[`r_soc_${r}`]=fmt(so,1);V[`r_v_${r}`]=fmt(1331+so*0.7,0);V[`r_i_${r}`]=fmt(P.bess*1000/(1331+so*0.7)/8,1);
+    V[`r_t_${r}`]=fmt(P.bessTemp+[0.4,1.1,0.2,0.8,1.6,0.3,0.9,0.5][r],1);V[`r_vmax_${r}`]=fmt(3.28+so*0.0007+r*0.001,3);V[`r_vmin_${r}`]=fmt(3.25+so*0.0007-r*0.001,3);}
+  S.socbar=ST.soc<20?'alarm':ST.soc<ST.ppc.socStart?'warn':'ok';
+  // LV / RMU
+  [['PRES',P.loadPres,'AH4'],['PM',P.loadPM,'AH6']].forEach(([k,p,ah])=>{const live=S[`w_${ah}`]==='live';
+    V[`lv_p_${k}`]=fmt(p);V[`lv_u_${k}`]=fmt(live&&ST.acb[k]?400+rnd(1.5):0);V[`lv_i_${k}`]=fmt(p/(1.732*0.4*0.93));V[`lv_pf_${k}`]=fmt(p?0.93+rnd(0.005):0,3);V[`lv_thd_${k}`]=fmt(p?2.6+rnd(0.1):0,1);
+    V[`lv_tx_${k}`]=fmt(p/630*100);V[`lv_wti_${k}`]=fmt(48+p/630*30+rnd(0.2),1);V[`lv_t_${k}`]=fmt(M.enc[k].t,1);V[`lv_rh_${k}`]=fmt(M.enc[k].rh,0);
+    S[`lv_rhs_${k}`]=M.enc[k].rh>75?'warn':'ok';V[`lv_rhs_${k}`]=M.enc[k].rh>75?'Humidity high':'Humidity normal';
+    ST.mccb[k].forEach((c,w)=>{S[`cb_${k}M${w}`]=c?'closed':'open';V[`mc_${k}_${w}`]=fmt(c&&live?p/10*(0.6+((w*37)%9)/10):0);S[`w_${k}M${w}`]=c&&S[`w_${k.toLowerCase()}lv`]==='live'?'live':'dead';});
+  });
+  V.aux_p=fmt(P.loadAux,1);V.aux_u=fmt(P.loadAux?400+rnd(1):0);
+  // UPS & fire
+  PLANT.ups.forEach((u,i)=>{const bat=ST.upsOnBat[u.id];V[`ups_st_${i}`]=bat?'On battery':'Online';S[`ups_st_${i}`]=bat?'warn':'on';V[`ups_b_${i}`]=fmt(bat?82:100);V[`ups_l_${i}`]=fmt([38,22,24,15][i]);V[`ups_a_${i}`]=fmt([52,96,92,240][i]);});
+  PLANT.fire.forEach(f=>{const s=ST.fire[f.id];V[`fz_${f.id}`]=s.state==='FIRE'?'FIRE':s.state;S[`fz_${f.id}`]=s.state==='FIRE'?'alarm':'ok';V[`fzi_${f.id}`]=s.inhibit?'Inhibited':(/Portable/.test(f.sup)?'n/a':'Armed (auto)');S[`fzi_${f.id}`]=s.inhibit?'warn':/Portable/.test(f.sup)?'na':'on';});
+  // PPC
+  V.ppc_mode=ST.ppc.mode; S.ppc_mode=ST.ppc.mode==='AUTO'?'on':'warn';
+  V.ppc_state=!P.busLive?'Blackout — black start required':ST.dg.some(d=>d.run)?'DG support: charging BESS':P.curtail>5?'PV surplus: curtailing PV':P.bess<-5?'PV surplus: charging BESS':'BESS supplying deficit';
+  V.ppc_ren=V.k_ren;
+  // alarm banner
+  const act=ALARMS.filter(a=>!a.ack||a.state==='ACTIVE').sort((a,b)=>a.prio-b.prio);
+  const top=ALARMS.filter(a=>!a.ack).sort((a,b)=>a.prio-b.prio)[0]||act[0];
+  V.ab_prio=top?'P'+top.prio:'OK'; S.ab_prio=top?'p'+top.prio:'ok'; V.ab_msg=top?`${top.t.slice(11)}  ${top.area}  ${top.desc}`:'No active alarms';
+  V.ab_count=`${ALARMS.filter(a=>a.state==='ACTIVE').length} active · ${ALARMS.filter(a=>!a.ack).length} unack`;
+  V.tab_alarm=String(ALARMS.filter(a=>!a.ack).length||'');
+}
+function paint(){
+  $$('[data-v]').forEach(el=>{const k=el.dataset.v;if(k in V&&el.textContent!==V[k]) el.textContent=V[k];});
+  $$('[data-s]').forEach(el=>{const k=el.dataset.s;if(k in S&&el.dataset.state!==S[k]) el.dataset.state=S[k];});
+  $$('[data-bar]').forEach(el=>{const k=el.dataset.bar;const x=Number(String(V[k]||0).replace(/,/g,''));el.style.width=clamp(x,0,100)+'%';});
+}
+
+/* ---------- SVG helpers ---------- */
+const W=(d,key,cls='w')=>`<path class="${cls}" data-s="${key}" d="${d}"/>`;
+const CB=(x,y,key,click,label)=>`<g class="hot" data-click="${click}"><rect class="cb" data-s="cb_${key}" x="${x-9}" y="${y-9}" width="18" height="18"><title>${label||key} — click for faceplate</title></rect></g>`;
+const TX=(x,y)=>`<circle class="eqs" cx="${x}" cy="${y-9}" r="12"/><circle class="eqs" cx="${x}" cy="${y+9}" r="12"/>`;
+const T=(x,y,t,c='',a='middle')=>`<text x="${x}" y="${y}" text-anchor="${a}" class="${c}">${t}</text>`;
+const TV=(x,y,k,c='val',a='middle')=>`<text x="${x}" y="${y}" text-anchor="${a}" class="${c}" data-v="${k}">—</text>`;
+
+/* ---------- screens ---------- */
+const SCREENS=[
+ {id:'overview',name:'Overview'},
+ {id:'gis',name:'11 kV GIS'},
+ {id:'gen',name:'Generators'},
+ {id:'bess',name:'BESS'},
+ {id:'pv',name:'PV & Weather'},
+ {id:'lv',name:'Distribution'},
+ {id:'aux',name:'UPS & Fire'},
+ {id:'ppc',name:'Plant Control'},
+ {id:'alarms',name:'Alarms'},
+ {id:'trends',name:'Trends'},
+ {id:'network',name:'Network'},
+ {id:'io',name:'I/O List'},
+];
+
+function scrOverview(){
+  const xs=[90,250,410,570,730,890,1050,1210], by=70;
+  let g=`<svg class="sld" viewBox="0 0 1300 520" role="img" aria-label="Plant single line diagram">`;
+  g+=W(`M40 ${by}H1260`,'w_bus','w bus')+T(40,by-14,'11 kV BUSBAR · 1250 A · GIS COMBINER PANEL','ttl','start')+`<text x="1260" y="${by-14}" text-anchor="end" class="val"><tspan data-v="busU">—</tspan>  <tspan data-v="busF">—</tspan></text>`;
+  PLANT.gis.forEach((f,i)=>{const x=xs[i];
+    g+=W(`M${x} ${by}V${by+120}`,`w_${f.id}`)+CB(x,by+40,f.id,`gis:${f.id}`,`${f.id} ${f.qf}`);
+    g+=T(x-16,by+33,f.id,'ttl','end')+`<text x="${x-16}" y="${by+49}" text-anchor="end" class="mut st" data-v="cbt_${f.id}"></text>`;
+    g+=TV(x+16,by+33,`p_${f.id}`,'val','start')+TV(x+16,by+49,`i_${f.id}`,'mut','start');
+    g+=T(x+7,by+80,f.name.toUpperCase(),'mut','start');
+  });
+  // AH1 DG branch
+  let x=xs[0], y=by+120; g+=TX(x,y+15)+T(x+16,y+12,'1.5 MVA','mut','start')+T(x+16,y+25,'11/0.4 kV','mut','start');
+  g+=W(`M${x} ${y+36}V${y+70}`,'w_dglv')+W(`M${x-45} ${y+70}H${x+45}`,'w_dglv','w');
+  [[-35,0],[35,1]].forEach(([dx,i])=>{const xx=x+dx;g+=W(`M${xx} ${y+70}V${y+170}`,`w_dg${i}`)+CB(xx,y+110,PLANT.dg[i].acb,`acb:DG${i}`,`${PLANT.dg[i].acb} ACB`)+T(xx+(dx<0?-13:13),y+114,PLANT.dg[i].acb,'mut',dx<0?'end':'start');
+    g+=`<g class="hot" data-click="go:gen"><circle class="eq" cx="${xx}" cy="${y+190}" r="20"/>${T(xx,y+195,'G','ttl')}</g>`+T(xx,y+228,PLANT.dg[i].id,'ttl')+T(xx,y+243,`${PLANT.dg[i].kva} kVA`,'mut')+TV(xx,y+259,`dg_p_${i}`)+`<rect x="${xx-30}" y="${y+266}" width="60" height="16" class="lbl-bg"/><text x="${xx}" y="${y+278}" text-anchor="middle" class="mut" data-v="dg_st_${i}"></text>`;});
+  // AH2 PV
+  x=xs[1]; g+=TX(x,y+15)+T(x+16,y+12,'1.5 MVA','mut','start')+T(x+16,y+25,'11/0.8 kV','mut','start');
+  g+=W(`M${x} ${y+36}V${y+90}`,'w_pvlv')+CB(x,y+62,'PVACB','acb:PV','PV LV ACB 1250 A')+T(x+14,y+66,'ACB 1250 A','mut','start');
+  g+=W(`M${x-60} ${y+90}H${x+60}`,'w_pvlv');
+  PLANT.inv.forEach((iv,i)=>{const xx=x-54+i*36;g+=W(`M${xx} ${y+90}V${y+130}`,`w_inv${i}`)+`<g class="hot" data-click="go:pv"><rect class="eq" x="${xx-14}" y="${y+130}" width="28" height="28"/><path class="eqs" d="M${xx-14} ${y+158}L${xx+14} ${y+130}"/></g>`+T(xx,y+172,iv.id,'mut')+TV(xx,y+186,`inv_pi_${i}`,'val');});
+  g+=T(x,y+212,'PV 1.516 MWp / 1.4 MW AC','ttl')+T(x,y+227,'2106 × 720 Wp · 81 strings','mut');
+  // AH3 BESS
+  x=xs[2]; g+=TX(x,y+15)+T(x+16,y+12,'1 MVA','mut','start')+T(x+16,y+25,'11/0.69 kV','mut','start');
+  g+=W(`M${x} ${y+36}V${y+130}`,'w_besslv')+CB(x,y+62,'BESSACB','acb:BESS','BESS LV ACB 1000 A')+T(x+14,y+66,'ACB 1000 A','mut','start');
+  g+=`<g class="hot" data-click="go:bess"><rect class="eq" x="${x-46}" y="${y+130}" width="92" height="70"/>${T(x,y+150,'BESS · PCS ×2','ttl')}${T(x,y+166,'3.34 MWh LFP','mut')}<rect x="${x-36}" y="${y+174}" width="72" height="12" class="lbl-bg"/><rect x="${x-36}" y="${y+174}" width="0" height="12" fill="var(--bess)" id="socRect"/></g>`;
+  g+=`<text x="${x}" y="${y+218}" text-anchor="middle" class="val">SOC <tspan data-v="b_soc">—</tspan> %</text>`+`<text x="${x}" y="${y+234}" text-anchor="middle" class="mut" data-v="k_bessdir"></text>`;
+  // AH4 President
+  const lvb=(x,k,ah,label)=>{let s=`<text x="${x+16}" y="${y+6}" class="mut">RMU</text>`+TX(x,y+30)+T(x+16,y+27,'630 kVA','mut','start')+T(x+16,y+40,'11/0.4 kV','mut','start');
+    s+=W(`M${x} ${y+51}V${y+130}`,`w_${k.toLowerCase()}lv`)+CB(x,y+78,`${k}ACB`,`acb:${k}`,`${label} incomer ACB`)+T(x+14,y+82,'ACB 1000 A','mut','start');
+    s+=`<g class="hot" data-click="go:lv"><rect class="eq" x="${x-58}" y="${y+130}" width="116" height="50"/>${T(x,y+150,'10-WAY LVDB','ttl')}${T(x,y+166,label,'mut')}</g>`+`<text x="${x}" y="${y+198}" text-anchor="middle" class="val"><tspan data-v="lv_p_${k}">—</tspan> kW</text>`;return s;};
+  g+=lvb(xs[3],'PRES','AH4','President office');
+  x=xs[4]; g+=`<rect class="eqs" x="${x-5}" y="${y+2}" width="10" height="18"/>`+T(x+12,y+14,'XRNT-3A','mut','start')+TX(x,y+45)+T(x+16,y+42,'100 kVA','mut','start')+W(`M${x} ${y+66}V${y+130}`,'w_auxlv')+CB(x,y+92,'AUXACB','acb:AUX','Aux panel 200 A')+`<g class="hot" data-click="go:aux"><rect class="eq" x="${x-56}" y="${y+130}" width="112" height="50"/>${T(x,y+150,'AUX PANEL','ttl')}${T(x,y+166,'UPS · HVAC · lighting','mut')}</g>`+`<text x="${x}" y="${y+198}" text-anchor="middle" class="val"><tspan data-v="aux_p">—</tspan> kW</text>`;
+  g+=lvb(xs[5],'PM','AH6','Prime Minister office');
+  x=xs[6]; g+=`<text x="${x}" y="${y+30}" text-anchor="middle" class="mut">SPARE</text><text x="${x}" y="${y+46}" text-anchor="middle" class="mut">ES closed</text>`;
+  x=xs[7]; g+=`<circle class="eqs" cx="${x}" cy="${y+20}" r="16"/><path class="eqs" d="M${x-8} ${y+14}l8 8 8-8M${x} ${y+22}v6"/>`+T(x+22,y+18,'Earthing TX','mut','start')+`<rect class="eqs" x="${x-7}" y="${y+60}" width="14" height="40"/>`+W(`M${x} ${y+36}V${y+60}M${x} ${y+100}V${y+120}`,'w_AH8')+`<path class="eqs" d="M${x-12} ${y+120}h24M${x-7} ${y+126}h14M${x-3} ${y+132}h6"/>`+T(x+14,y+76,'NER 63.5 Ω','mut','start')+T(x+14,y+90,'100 A / 10 s','mut','start');
+  g+=`</svg>`;
+  return `<div class="scr-h"><h1>Plant overview</h1><p>Islanded 11 kV microgrid. BESS PCS is the grid-forming source; DGs support on low SOC. Click any breaker for its faceplate, or any equipment to open its screen.</p></div>
+  <div class="kpis">
+   <div class="kpi load"><small>Plant load</small><b data-v="k_load">—</b><i>kW</i></div>
+   <div class="kpi pv"><small>PV output</small><b data-v="k_pv">—</b><i>kW</i></div>
+   <div class="kpi bess"><small>BESS (+dis / −chg)</small><b data-v="k_bess">—</b><i>kW</i></div>
+   <div class="kpi dg"><small>Diesel gen.</small><b data-v="k_dg">—</b><i>kW</i></div>
+   <div class="kpi bess"><small>BESS SOC</small><b data-v="k_soc">—</b><i>%</i></div>
+   <div class="kpi"><small>Bus frequency</small><b data-v="k_f">—</b><i>Hz</i></div>
+   <div class="kpi"><small>Bus voltage</small><b data-v="k_u">—</b><i>kV</i></div>
+   <div class="kpi pv"><small>Irradiance (POA)</small><b data-v="k_G">—</b><i>W/m²</i></div>
+   <div class="kpi"><small>Renewable share</small><b data-v="k_ren">—</b><i>%</i></div>
+   <div class="kpi"><small>PV curtailed</small><b data-v="k_curt">—</b><i>kW</i></div>
+  </div>
+  <div class="box"><h2>Overall single line diagram<span class="sp"><span class="pill" data-s="ppc_mode" data-v="ppc_mode"></span><span class="pill" data-v="ppc_state"></span></span></h2><div class="bd scroll">${g}</div>
+  <div class="bd legend"><span><i style="background:var(--live)"></i>Energised</span><span><i style="background:var(--dead)"></i>De-energised</span><span><i style="background:var(--closed);height:10px;width:10px"></i>Breaker closed</span><span><i style="background:var(--open);height:10px;width:10px"></i>Breaker open</span><span><i style="background:var(--warn);height:10px;width:10px"></i>Tripped</span><span>Breaker status from VCB auxiliary contacts (hard-wired) and confirmed by relay. Always verify locally before working on equipment.</span></div></div>`;
+}
+
+function scrGIS(){
+  const cards=PLANT.gis.map(g=>`<div class="box"><h2>${g.id} · ${g.name}<span class="sp">${sv('cbt_'+g.id)}${sv('lr_'+g.id)}</span></h2><div class="bd grid" style="gap:8px">
+    <div class="row">${sv('esp_'+g.id)} ${sv('vpi_'+g.id)} ${sv('rly_'+g.id)}</div>
+    ${kv([['Ia / Ib / Ic (A)',`ia_${g.id}`],['',`ib_${g.id}`],['',`ic_${g.id}`],['U line (kV)',`u_${g.id}`],['Frequency (Hz)',`f_${g.id}`],['P',`p_${g.id}`],['Q',`q_${g.id}`],['Power factor',`pf_${g.id}`]]).replace(/<span><\/span>/g,'<span>&nbsp;</span>')}
+    <div class="note">${g.ql} / ${g.qf} · VCB 630 A 31.5 kA · CT ${g.ct} · ${g.relay}${g.sa?' · HY5WS-17/50 arrester':''}</div>
+    <div class="row"><button class="btn" data-click="gis:${g.id}">Open faceplate</button></div></div></div>`).join('');
+  const prot=`<table class="t"><thead><tr><th>Panel</th><th>50/51</th><th>50N/51N</th><th>27/59</th><th>81</th><th>46</th><th>49</th><th>SF6</th><th>Spring</th><th>Ops</th></tr></thead><tbody>${PLANT.gis.map((g,i)=>`<tr><td>${g.id}</td>${['','','','','',''].map(()=>`<td><span class="pill" data-s="rly_${g.id}">—</span></td>`).join('').replace(/>—</g,'>OK<')}<td><span class="pill" data-state="ok">Normal</span></td><td><span class="pill" data-state="ok">Charged</span></td><td class="n">${[412,388,402,356,129,341,12,97][i]}</td></tr>`).join('')}</tbody></table>`;
+  return `<div class="scr-h"><h1>11 kV GIS combiner panel</h1><p>Eight panels AH1–AH8 on the 1250 A busbar. Easergy P5M30 relays over Modbus TCP; breaker positions hard-wired to M580 Rack 2.</p></div>
+  <div class="grid g4">${cards}</div>
+  <div class="box" style="margin-top:12px"><h2>Protection status matrix</h2><div class="bd scroll">${prot}</div></div>`;
+}
+
+function scrGen(){
+  const c=PLANT.dg.map((d,i)=>`<div class="box"><h2>${d.id} · ${d.kva} kVA / ${d.kw} kWe<span class="sp">${sv('dg_st_'+i)}${sv('dg_mode_'+i)}</span></h2><div class="bd grid g2" style="gap:14px">
+    <div>${kv([['Active power (kW)',`dg_p_${i}`],['Apparent power (kVA)',`dg_kva_${i}`],['Load (%)',`dg_load_${i}`],['Voltage L-L (V)',`dg_u_${i}`],['Current (A)',`dg_i_${i}`],['Frequency (Hz)',`dg_f_${i}`]])}</div>
+    <div>${kv([['Engine speed (rpm)',`dg_rpm_${i}`],['Oil pressure (bar)',`dg_oil_${i}`],['Coolant temp (°C)',`dg_clt_${i}`],['Starter battery (V)',`dg_bat_${i}`],['Running hours (h)',`dg_hrs_${i}`],['Fuel level (%)',`dg_fuel_${i}`]])}
+      <div class="bar" style="margin-top:6px"><i data-bar="dg_fuel_${i}" style="background:var(--dg)"></i></div></div>
+    <div class="row" style="grid-column:1/-1">${sv('cbt_'+d.acb)} <span class="note">${d.acb} ACB ${d.acbA} A 65 kA</span>
+      <span style="margin-left:auto" class="row"><button class="btn grn" data-click="dg:${i}:start">Start</button><button class="btn red" data-click="dg:${i}:stop">Stop</button><button class="btn" data-click="dg:${i}:mode">Mode</button><button class="btn" data-click="acb:DG${i}">ACB</button></span></div>
+  </div></div>`).join('');
+  return `<div class="scr-h"><h1>Diesel generators</h1><p>DG1 550 kVA and DG2 660 kVA on a common 0.4 kV bus, stepped up by 1.5 MVA 11/0.4 kV Dyn11 to GIS panel AH1. Controllers over Modbus RTU (BMXNOM0200).</p></div>
+  <div class="grid g2">${c}</div>
+  <div class="grid g3" style="margin-top:12px">
+   <div class="box"><h2>DG step-up transformer</h2><div class="bd">${kv([['Rating','tx_dg_r'],['Winding temp (°C)','tx_dg_t'],['Feeder','tx_dg_f']])}</div></div>
+   <div class="box"><h2>Auto-start rules (PPC)</h2><div class="bd note">Start DG1 when BESS SOC &lt; start threshold. Start DG2 if SOC keeps falling 8 % below threshold or load exceeds DG1 at 80 %. Stop when SOC reaches the stop threshold. Minimum DG load is held to avoid wet stacking. Thresholds are set on the Plant Control screen.</div></div>
+   <div class="box"><h2>Fuel & runtime today</h2><div class="bd">${kv([['DG energy today (kWh)','dg_e'],['Fuel used est. (L)','dg_fuelL']])}</div></div>
+  </div>`;
+}
+
+function scrBESS(){
+  const racks=`<table class="t"><thead><tr><th>Rack</th><th class="n">SOC %</th><th class="n">Voltage V</th><th class="n">Current A</th><th class="n">Max temp °C</th><th class="n">Cell V max</th><th class="n">Cell V min</th><th>DC contactor</th></tr></thead><tbody>${Array.from({length:8},(_,r)=>`<tr><td>Rack ${r+1}</td><td class="n" data-v="r_soc_${r}"></td><td class="n" data-v="r_v_${r}"></td><td class="n" data-v="r_i_${r}"></td><td class="n" data-v="r_t_${r}"></td><td class="n" data-v="r_vmax_${r}"></td><td class="n" data-v="r_vmin_${r}"></td><td><span class="pill" data-state="closed">Closed</span></td></tr>`).join('')}</tbody></table>`;
+  const pcs=[0,1].map(i=>`<div class="box"><h2>PCS ${i+1}<span class="sp">${sv('pcs_st_'+i)}</span></h2><div class="bd">${kv([['Active power (kW)',`pcs_p_${i}`],['AC voltage (V)',`pcs_u_${i}`],['IGBT temperature (°C)',`pcs_t_${i}`]])}<div class="row" style="margin-top:8px"><button class="btn" data-click="pcs:${i}">Start / stop</button></div></div></div>`).join('');
+  return `<div class="scr-h"><h1>Battery energy storage</h1><p>3.34 MWh LFP (416S8P, 3.2 V 314 Ah), 8 racks, 2 PCS through 1 MVA 11/0.69 kV Dd0 and 1000 A ACB to GIS panel AH3. BMS/EMS over Modbus TCP.</p></div>
+  <div class="kpis"><div class="kpi bess"><small>State of charge</small><b data-v="b_soc"></b><i>%</i></div><div class="kpi bess"><small>Energy stored</small><b data-v="b_kwh"></b><i>kWh</i></div><div class="kpi bess"><small>Power (+dis/−chg)</small><b data-v="b_p"></b><i>kW</i></div><div class="kpi"><small>Reactive power</small><b data-v="b_q"></b><i>kvar</i></div><div class="kpi"><small>State of health</small><b data-v="b_soh"></b><i>%</i></div><div class="kpi"><small>Charge limit</small><b data-v="b_pmax"></b><i>kW</i></div><div class="kpi"><small>Discharge limit</small><b data-v="b_dmax"></b><i>kW</i></div></div>
+  <div class="box" style="margin-bottom:12px"><h2>SOC band<span class="sp">${sv('b_mode')}</span></h2><div class="bd"><div class="bar" style="height:18px"><i data-bar="b_soc" style="background:var(--bess)"></i></div><div class="note" style="margin-top:6px">Min SOC <b class="num" id="lblMin"></b> % · DG start <b class="num" id="lblStart"></b> % · DG stop <b class="num" id="lblStop"></b> %</div></div></div>
+  <div class="grid g3">${pcs}
+   <div class="box"><h2>DC system & environment</h2><div class="bd">${kv([['DC bus voltage (V)','b_vdc'],['DC current (A)','b_idc'],['Average cell temp (°C)','b_t'],['Container air (°C)','b_hvac'],['Container humidity (%)','b_rh'],['Charged today (kWh)','b_chg'],['Discharged today (kWh)','b_dis']])}</div></div>
+   <div class="box"><h2>BESS safety</h2><div class="bd grid" style="gap:6px"><div class="row"><span class="pill" data-state="ok">Fire: normal</span><span class="pill" data-state="ok">Off-gas: normal</span><span class="pill" data-state="ok">E-stop: released</span><span class="pill" data-state="on">Suppression armed</span><span class="pill" data-state="on">HVAC running</span></div><div class="note">Fire alarm or off-gas detection trips the PCS, opens the BESS ACB, stops HVAC recirculation and starts exhaust. See UPS &amp; Fire screen.</div></div></div>
+  </div>
+  <div class="box" style="margin-top:12px"><h2>Battery racks</h2><div class="bd scroll">${racks}</div></div>`;
+}
+
+function scrPV(){
+  const inv=PLANT.inv.map((d,i)=>`<div class="box"><h2>${d.id} · ${d.model}<span class="sp">${sv('inv_st_'+i)}</span></h2><div class="bd">${kv([['AC power (kW)',`inv_p_${i}`],['Load (%)',`inv_load_${i}`],['DC power (kW)',`inv_pdc_${i}`],['DC voltage (V)',`inv_udc_${i}`],['Energy today (kWh)',`inv_eday_${i}`],['Internal temp (°C)',`inv_t_${i}`],['Insulation (kΩ)',`inv_iso_${i}`]])}
+    <div class="bar" style="margin-top:6px"><i data-bar="inv_load_${i}" style="background:var(--pv)"></i></div>
+    <div class="note" style="margin-top:6px">${d.strings} strings × 26 modules · MCCB 400 A · DC SPD / AC SPD class II</div>
+    <div class="row" style="margin-top:8px"><button class="btn" data-click="inv:${i}">Start / stop</button></div></div></div>`).join('');
+  const strs=PLANT.inv.map((d,i)=>`<div><div class="note" style="margin:6px 0 3px">${d.id} string currents (A)</div><div class="strings" id="str_${i}">${Array.from({length:d.strings},(_,k)=>`<div title="${d.id}-${String(k+1).padStart(2,'0')}" data-str="${i}:${k}">—</div>`).join('')}</div></div>`).join('');
+  return `<div class="scr-h"><h1>PV system & weather station</h1><p>1.516 MWp (2106 × 720 Wp Jinko), 4 × SG350HX string inverters on RS485 to the PLC box, 1.5 MVA 11/0.8 kV Dd0 to GIS panel AH2.</p></div>
+  <div class="kpis"><div class="kpi pv"><small>PV AC output</small><b data-v="pv_tot"></b><i>kW</i></div><div class="kpi pv"><small>Available</small><b data-v="pv_avail"></b><i>kW</i></div><div class="kpi"><small>Curtailed</small><b data-v="k_curt"></b><i>kW</i></div><div class="kpi"><small>Energy today</small><b data-v="pv_eday"></b><i>kWh</i></div><div class="kpi"><small>Performance ratio</small><b data-v="pv_pr"></b><i>%</i></div>
+   <div class="kpi pv"><small>POA irradiance</small><b data-v="met_G"></b><i>W/m²</i></div><div class="kpi"><small>Module temp</small><b data-v="met_tmod"></b><i>°C</i></div><div class="kpi"><small>Ambient temp</small><b data-v="met_tamb"></b><i>°C</i></div><div class="kpi"><small>Wind</small><b data-v="met_ws"></b><i>m/s</i></div><div class="kpi"><small>Wind dir.</small><b data-v="met_wd"></b><i>°</i></div></div>
+  <div class="grid g4">${inv}</div>
+  <div class="grid g2" style="margin-top:12px"><div class="box"><h2>String monitoring (81 strings)</h2><div class="bd">${strs}<div class="legend"><span><i style="background:var(--ok)"></i>Within 10 % of average</span><span><i style="background:var(--warn)"></i>10–30 % low</span><span><i style="background:var(--crit)"></i>&gt;30 % low</span></div></div></div>
+   <div class="box"><h2>Weather station · blue'Log XM 5000</h2><div class="bd">${kv([['Irradiance SMP12-A (W/m²)','met_G'],['Irradiation today (kWh/m²)','met_hirr'],['Ambient temp (°C)','met_tamb'],['Module temp (°C)','met_tmod'],['Wind speed Gill WindSonic (m/s)','met_ws'],['Wind direction (°)','met_wd']])}<div class="note" style="margin-top:8px">Sensors on Meteocontrol fieldbus extension; logger to plant Ethernet switch, then Modbus TCP to the M580 / SCADA.</div></div></div></div>`;
+}
+
+function scrLV(){
+  const lv=(k,name,ah)=>{const m=Array.from({length:10},(_,w)=>{const x=40+w*62;return W(`M${x} 60V95`,`w_${k}M${w}`)+CB(x,78,`${k}M${w}`,`mccb:${k}:${w}`,`MCCB ${w+1}`)+T(x,112,`F${w+1}`,'mut')+TV(x,127,`mc_${k}_${w}`,'val');}).join('');
+    return `<div class="box"><h2>${name}<span class="sp">${sv('cbt_'+k+'ACB')}</span></h2><div class="bd grid g2" style="gap:12px">
+     <div>${kv([['Feeder',`f_${k}`],['RMU','rmu_'+k],['Load (kW)',`lv_p_${k}`],['Voltage L-L (V)',`lv_u_${k}`],['Current (A)',`lv_i_${k}`],['Power factor',`lv_pf_${k}`],['Voltage THD (%)',`lv_thd_${k}`],['TX loading (%)',`lv_tx_${k}`],['TX winding temp (°C)',`lv_wti_${k}`]])}</div>
+     <div>${kv([['Enclosure temp TH110 (°C)',`lv_t_${k}`],['Enclosure humidity CL110 (%RH)',`lv_rh_${k}`]])}<div class="row" style="margin-top:6px">${sv('lv_rhs_'+k)}<span class="note">Condensation risk above 75 %RH</span></div>
+      <div class="row" style="margin-top:8px"><span class="pill" data-state="on">RMU UPS online</span><span class="pill" data-state="ok">ST260E healthy</span><span class="pill" data-state="closed">QL1</span><span class="pill" data-state="closed">QL2</span><span class="pill" data-state="closed">QF11</span></div>
+      <div class="row" style="margin-top:8px"><button class="btn" data-click="acb:${k}">Incomer ACB</button></div></div>
+     <div class="scroll" style="grid-column:1/-1"><svg class="sld" viewBox="0 0 660 140" style="min-width:600px;max-width:760px">${W('M20 60H640',`w_${k.toLowerCase()}lv`,'w bus')}${T(20,46,'0.4 kV BUSBAR · 10 × MCCB 250 A 36 kA (kW)','mut','start')}${m}</svg></div></div></div>`;};
+  return `<div class="scr-h"><h1>Distribution · RMUs & LVDBs</h1><p>Transformer stations for the Presidency and Prime Minister offices: GIS-12 RMU (incomer, outgoing, transformer VCB with ST260E relay), 630 kVA 11/0.4 kV Dyn11, 1000 A incomer, 10-way LVDB with PM5320 metering and PAS600 environment sensing.</p></div>
+  <div class="grid">${lv('PRES','Office of the President','AH4')}${lv('PM','Office of the Prime Minister','AH6')}</div>
+  <div class="grid g3" style="margin-top:12px"><div class="box"><h2>Auxiliary supply (AH5)<span class="sp">${sv('cbt_AUXACB')}</span></h2><div class="bd">${kv([['Transformer','aux_tx'],['Load (kW)','aux_p'],['Voltage (V)','aux_u']])}<div class="note" style="margin-top:6px">XRNT-3A fuse, 100 kVA transformer and 200 A incomer feed the aux panel: SCADA/UPS, GIS DC charger, HVAC, lighting.</div></div></div>
+  <div class="box"><h2>Load shedding priorities</h2><div class="bd note">Priority 1 (never shed): F1–F3 critical offices &amp; security. Priority 2: F4–F7 general power. Priority 3 (shed first): F8–F10 HVAC &amp; non-essential. Shedding is applied via MCCB shunt trips when SOC &lt; min and no DG is available.</div></div></div>`;
+}
+
+function scrAux(){
+  const ups=`<table class="t"><thead><tr><th>Unit</th><th>Description</th><th>Status</th><th class="n">Battery %</th><th class="n">Load %</th><th class="n">Autonomy min</th></tr></thead><tbody>${PLANT.ups.map((u,i)=>`<tr><td class="tag">${u.id}</td><td>${u.name}</td><td>${sv('ups_st_'+i)}</td><td class="n" data-v="ups_b_${i}"></td><td class="n" data-v="ups_l_${i}"></td><td class="n" data-v="ups_a_${i}"></td></tr>`).join('')}</tbody></table>`;
+  const fire=`<table class="t"><thead><tr><th>Zone</th><th>Area</th><th>Detection</th><th>Detection status</th><th>Suppression</th><th>Suppression status</th><th></th></tr></thead><tbody>${PLANT.fire.map(f=>`<tr><td class="tag">${f.id}</td><td>${f.area}</td><td>${f.det}</td><td>${sv('fz_'+f.id)}</td><td>${f.sup}</td><td>${sv('fzi_'+f.id)}</td><td><button class="btn" data-click="fire:${f.id}">Test / reset</button></td></tr>`).join('')}</tbody></table>`;
+  return `<div class="scr-h"><h1>UPS, auxiliary power & fire safety</h1><p>Auxiliary power sources and fire detection / suppression zones monitored through the fire alarm control panel (FACP) contacts and UPS communication cards.</p></div>
+  <div class="box"><h2>UPS & DC systems</h2><div class="bd scroll">${ups}</div></div>
+  <div class="box" style="margin-top:12px"><h2>Fire detection & suppression</h2><div class="bd scroll">${fire}<div class="note" style="margin-top:8px">Fire in the GIS room, BESS container or control room trips the associated HVAC; BESS fire also stops both PCS and opens the BESS ACB. Suppression release is never commanded from SCADA, only monitored. Use "Test / reset" to simulate a zone alarm in this mock-up.</div></div></div>`;
+}
+
+function scrPPC(){
+  const p=ST.ppc;
+  const seq=['Confirm 11 kV bus dead and all GIS feeders open (except NECR AH8).','Close BESS LV ACB; start PCS 1 and PCS 2 in grid-forming V/f mode at 0.69 kV / 50 Hz.','Close AH3 (BESS In): energise the 11 kV busbar and verify VPIs show live.','Close AH8 (NECR) to establish the neutral earthing reference.','Close AH5 (Aux) to restore auxiliary supply and UPS charging.','Close AH4 then AH6 to pick up the President and Prime Minister LVDBs, one at a time.','Close AH2 and PV ACB; inverters reconnect after the grid-code wait time.','If SOC is below the DG start threshold, start DG1 and close Q2 then AH1 (synchronised by DG controller).'];
+  return `<div class="scr-h"><h1>Power plant controller</h1><p>Supervisory dispatch of BESS, PV and diesel generators. Setpoints are written to the M580; the PCS keeps voltage and frequency.</p></div>
+  <div class="grid g3">
+   <div class="box"><h2>Operating state<span class="sp">${sv('ppc_mode')}</span></h2><div class="bd grid" style="gap:8px"><div><span class="pill" data-v="ppc_state"></span></div>${kv([['Plant load (kW)','k_load'],['PV (kW)','k_pv'],['BESS (kW)','k_bess'],['DG (kW)','k_dg'],['SOC (%)','k_soc'],['Renewable share (%)','ppc_ren']])}
+     <div class="row"><button class="btn pri" data-click="ppc:AUTO">Auto</button><button class="btn" data-click="ppc:MANUAL">Manual</button></div></div></div>
+   <div class="box"><h2>Setpoints</h2><div class="bd"><form id="ppcForm" class="inp">
+     <label for="sp_socStart">DG start at SOC (%)</label><input id="sp_socStart" type="number" min="15" max="60" value="${p.socStart}">
+     <label for="sp_socStop">DG stop at SOC (%)</label><input id="sp_socStop" type="number" min="50" max="100" value="${p.socStop}">
+     <label for="sp_socMin">Load shed at SOC (%)</label><input id="sp_socMin" type="number" min="5" max="30" value="${p.socMin}">
+     <label for="sp_pvLimit">PV active power limit (%)</label><input id="sp_pvLimit" type="number" min="0" max="100" value="${p.pvLimit}">
+     <label for="sp_dgMin">DG minimum load (%)</label><input id="sp_dgMin" type="number" min="20" max="60" value="${p.dgMinLoad}">
+     <span></span><button class="btn pri" type="submit">Write setpoints</button></form><div class="note" style="margin-top:6px">Engineer level required to write setpoints.</div></div></div>
+   <div class="box"><h2>Control functions</h2><div class="bd note"><ul class="seq" style="list-style:disc">
+     <li>BESS grid-forming (V/f) — sets bus voltage and frequency.</li><li>PV curtailment when BESS charge limit or SOC 97 % is reached.</li><li>DG auto start / stop on SOC with minimum-load protection.</li><li>Under-frequency and low-SOC load shedding via LVDB MCCB shunt trips.</li><li>Reactive power sharing: BESS droop, inverters at PF 1.0 (adjustable).</li><li>Command arbitration: SCADA remote only when panel L/R is REMOTE; protection relays trip independently of SCADA.</li></ul></div></div>
+  </div>
+  <div class="box" style="margin-top:12px"><h2>Operational sequence · black start from BESS</h2><div class="bd"><ol class="seq" id="seqList">${seq.map(s=>`<li>${s}</li>`).join('')}</ol><div class="row" style="margin-top:10px"><button class="btn" data-click="seq">Step through sequence</button><span class="note">Each step is checked by PLC permissives before the next command is released.</span></div></div></div>`;
+}
+
+function scrAlarms(){
+  return `<div class="scr-h"><h1>Alarms & events</h1><p>Time-stamped (EAT, UTC+3), prioritised P1 critical · P2 warning · P3 advisory, grouped by plant area.</p></div>
+  <div class="fsearch"><select id="alArea"><option value="">All areas</option>${['GIS','DG','BESS','PV','LV','AUX','FIRE','PPC','SYS'].map(a=>`<option>${a}</option>`).join('')}</select><button class="btn" id="ackAll2">Acknowledge all</button></div>
+  <div class="box"><h2>Alarm summary</h2><div class="bd scroll" id="alTable"></div></div>
+  <div class="box" style="margin-top:12px"><h2>Event journal</h2><div class="bd scroll" id="evTable"></div></div>`;
+}
+function renderAlarmTables(){
+  const ar=$('#alArea')?.value||'';const al=ALARMS.filter(a=>!ar||a.area===ar);
+  if($('#alTable')) $('#alTable').innerHTML=`<table class="t"><thead><tr><th>Time</th><th>Pri</th><th>Area</th><th>Tag</th><th>Description</th><th>State</th><th></th></tr></thead><tbody>${al.map(a=>`<tr class="${a.ack?'':'unack'}"><td class="tag">${a.t}</td><td><span class="pill" data-state="p${a.prio}">P${a.prio}</span></td><td>${a.area}</td><td class="tag">${a.tag}</td><td>${a.desc}</td><td><span class="pill" data-state="${a.state==='ACTIVE'?'alarm':'ok'}">${a.state}</span> ${a.ack?'<span class="pill" data-state="off">ACK</span>':''}</td><td>${a.ack?'':`<button class="btn" data-click="ack:${a.id}">Ack</button>`}</td></tr>`).join('')||'<tr><td colspan="7">No alarms</td></tr>'}</tbody></table>`;
+  if($('#evTable')) $('#evTable').innerHTML=`<table class="t"><thead><tr><th>Time</th><th>Area</th><th>Object</th><th>Event</th><th>User</th></tr></thead><tbody>${EVENTS.filter(e=>!ar||e.area===ar).slice(0,120).map(e=>`<tr><td class="tag">${e.t}</td><td>${e.area}</td><td class="tag">${e.eq}</td><td>${e.txt}</td><td>${e.user}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function scrTrends(){
+  return `<div class="scr-h"><h1>Trends</h1><p>Last 24 hours at 5-minute resolution, live values appended. Historian stores all analogue tags for 13 months.</p></div>
+  <div class="box"><h2>Power by source (kW)</h2><div class="bd"><canvas id="tr1" height="300"></canvas><div class="legend"><span><i style="background:var(--load)"></i>Plant load</span><span><i style="background:var(--pv)"></i>PV</span><span><i style="background:var(--bess)"></i>BESS (+dis/−chg)</span><span><i style="background:var(--dg)"></i>Diesel</span></div></div></div>
+  <div class="box" style="margin-top:12px"><h2>BESS SOC (%) and irradiance (W/m²)</h2><div class="bd"><canvas id="tr2" height="220"></canvas><div class="legend"><span><i style="background:var(--bess)"></i>SOC % (left axis)</span><span><i style="background:var(--pv)"></i>Irradiance W/m² (right axis)</span></div></div></div>`;
+}
+function drawTrend(id,series,yMin,yMax,ticks,y2){
+  const c=$('#'+id);if(!c)return;const dpr=window.devicePixelRatio||1,w=c.clientWidth,h=Number(c.getAttribute('height'));c.width=w*dpr;c.height=h*dpr;c.style.height=h+'px';
+  const x=c.getContext('2d');x.scale(dpr,dpr);const cs=getComputedStyle(document.documentElement);const col=n=>cs.getPropertyValue(n).trim();
+  const L=52,R=y2?52:14,T=10,B=26,pw=w-L-R,ph=h-T-B;const t0=HIST[0].t,t1=HIST[HIST.length-1].t;
+  const X=t=>L+(t-t0)/(t1-t0)*pw,Y=v=>T+(1-(v-yMin)/(yMax-yMin))*ph;
+  x.font='11px '+col('--f-num');x.fillStyle=col('--muted');x.strokeStyle=col('--line');x.lineWidth=1;
+  ticks.forEach(v=>{x.beginPath();x.moveTo(L,Y(v));x.lineTo(L+pw,Y(v));x.stroke();x.textAlign='right';x.fillText(String(v),L-6,Y(v)+4);});
+  if(y2) y2.ticks.forEach((v,i)=>{x.textAlign='left';x.fillText(String(v),L+pw+6,Y(ticks[i])+4);});
+  for(let k=0;k<=6;k++){const t=t0+(t1-t0)*k/6;const d=new Date(t+3*3600e3);x.textAlign=k===0?'left':k===6?'right':'center';x.fillText(d.toISOString().slice(11,16),X(t),h-8);}
+  if(yMin<0){x.strokeStyle=col('--muted');x.beginPath();x.moveTo(L,Y(0));x.lineTo(L+pw,Y(0));x.stroke();}
+  series.forEach(s=>{x.strokeStyle=col(s.c);x.lineWidth=s.w||1.8;x.beginPath();HIST.forEach((p,i)=>{let val=s.f(p);if(s.scale) val=yMin+(val-s.scale[0])/(s.scale[1]-s.scale[0])*(yMax-yMin);const px=X(p.t),py=Y(val);i?x.lineTo(px,py):x.moveTo(px,py);});x.stroke();
+    const lp=HIST[HIST.length-1];let lv=s.f(lp);if(s.scale) lv=yMin+(lv-s.scale[0])/(s.scale[1]-s.scale[0])*(yMax-yMin);x.fillStyle=col(s.c);x.beginPath();x.arc(X(lp.t),Y(lv),3.5,0,7);x.fill();});
+}
+function renderTrends(){drawTrend('tr1',[{f:p=>p.load,c:'--load'},{f:p=>p.pv,c:'--pv'},{f:p=>p.bess,c:'--bess'},{f:p=>p.dg,c:'--dg'}],-1000,1500,[-1000,-500,0,500,1000,1500]);
+  drawTrend('tr2',[{f:p=>p.soc,c:'--bess',w:2.2},{f:p=>p.G,c:'--pv',scale:[0,1200]}],0,100,[0,25,50,75,100],{ticks:[0,300,600,900,1200]});}
+
+function scrNetwork(){
+  const node=(x,y,w,t,s,k,click)=>`<g ${click?`class="hot" data-click="${click}"`:''}><rect class="eq" x="${x}" y="${y}" width="${w}" height="38" rx="2"/><circle cx="${x+w-9}" cy="${y+9}" r="4.5" class="lamp-svg" fill="var(--ok)"/>${T(x+w/2,y+16,t,'ttl')}${T(x+w/2,y+31,s,'mut')}</g>`;
+  const ln=(d,c='var(--muted)',dash='')=>`<path d="${d}" stroke="${c}" stroke-width="1.6" fill="none" ${dash?`stroke-dasharray="${dash}"`:''}/>`;
+  let g=`<svg class="sld" viewBox="0 0 1300 560" role="img" aria-label="Communication architecture">`;
+  const zone=(y,h,t)=>`<rect x="10" y="${y}" width="1280" height="${h}" fill="none" stroke="var(--line)" stroke-dasharray="5 4"/>`+T(1282,y+15,t,'mut','end');
+  g+=zone(10,70,'LEVEL 3 · ENTERPRISE / REMOTE (DMZ)')+zone(90,90,'LEVEL 2 · SUPERVISORY — SCADA LAN 10.10.10.0/24')+zone(190,110,'LEVEL 1 · CONTROL — M580 RIO/DIO RING (RSTP)')+zone(310,240,'LEVEL 0 · FIELD DEVICES — DEVICE NETWORK 10.20.0.0/16 & SERIAL');
+  g+=node(520,28,180,'Industrial firewall','DMZ · VPN · read-only mirror');g+=node(740,28,170,'Remote monitoring','Ministry / O&M (VPN, MFA)');g+=ln('M700 47H740');
+  g+=node(140,120,170,'HMI / SCADA 1','HMIP6 · MSE runtime 4K');g+=node(330,120,170,'HMI / SCADA 2','HMIP6 · hot standby');g+=node(520,120,180,'Engineering station','Control Expert · MSE BT');g+=node(720,120,170,'Historian / NTP','13-month storage, GPS time');g+=node(910,120,170,'Plant LAN switch','MCSESM083 SW1');
+  g+=ln('M610 66V120')+ln('M225 158V200M415 158V200M610 158V200M805 158V200M995 158V200');
+  g+=ln('M60 200H1240','var(--accent)');
+  g+=node(80,230,210,'M580 BMEP582040','Main rack · NOC0311 ×2 · NOC0321');g+=node(320,230,200,'Remote drop BMECRA31210','Rack 2 · 3×DDI · 2×DDO');g+=node(550,230,180,'BMXNOM0200','Modbus RTU · RS485 ×2');g+=node(760,230,180,'MCSESM083 SW2','Device network switch');
+  g+=ln('M185 200V230M420 200V230M640 200V230M850 200V230');
+  g+=ln('M850 268V330H1260','var(--live)')+ln('M640 268V500','var(--dc)','5 4')+ln('M420 268V330H60','var(--live)');
+  const f=[[30,'P5M30 ×8','GIS AH1–AH8 · Modbus TCP'],[230,'PM5320 ×5','DG·PV·BESS·LVDB · TCP'],[430,'Edge I/O NTS ×7','LVDB & PV areas · EIP']];
+  f.forEach(([x,a,b])=>{g+=ln(`M${x+90} 330V370`)+node(x,370,180,a,b);});
+  g+=ln('M640 420H700')+node(700,402,190,'DG1 / DG2 controllers','Modbus RTU · RS485');
+  const f2=[[920,'BESS EMS / BMS','Modbus TCP · PCS ×2'],[1110,"blue'Log XM5000",'Weather station · TCP']];
+  f2.forEach(([x,a,b])=>{g+=ln(`M${x+85} 330V370`)+node(x,370,170,a,b);});
+  g+=node(30,470,180,'SG350HX ×4','RS485 → NTSFMB0120K')+ln('M120 470V408');g+=node(230,470,180,'PAS600 ×7 + sensors','TH110 / CL110 wireless');g+=ln('M320 470V408');
+  g+=node(430,470,180,'FACP · UPS cards','Dry contacts / Modbus');g+=ln('M520 470V408');g+=node(920,470,170,'RMU ST260E ×2','Via Edge I/O contacts');g+=ln('M1005 470V408');
+  g+=`</svg>`;
+  const proto=`<table class="t"><thead><tr><th>Interface</th><th>Protocol</th><th>Medium</th><th>Poll / scan</th></tr></thead><tbody>
+   <tr><td>SCADA ↔ M580</td><td>Modbus TCP / EtherNet/IP</td><td>Cu Cat6 / SM fibre</td><td>500 ms</td></tr>
+   <tr><td>M580 ↔ Rack 2 & Edge I/O</td><td>EtherNet/IP (RIO/DIO, RSTP ring)</td><td>Fibre between buildings</td><td>20 ms</td></tr>
+   <tr><td>P5M30 relays, PM5320 meters</td><td>Modbus TCP (IEC 61850 optional)</td><td>Cu Cat6</td><td>1 s · SOE 1 ms in relay</td></tr>
+   <tr><td>BESS EMS/BMS</td><td>Modbus TCP</td><td>Fibre</td><td>200 ms (setpoints)</td></tr>
+   <tr><td>PV inverters SG350HX</td><td>Modbus RTU 9600 8N1</td><td>RS485 daisy chain</td><td>2 s</td></tr>
+   <tr><td>DG controllers</td><td>Modbus RTU</td><td>RS485</td><td>1 s</td></tr>
+   <tr><td>Weather station</td><td>Modbus TCP</td><td>Cu Cat6</td><td>5 s</td></tr>
+   <tr><td>PAS600 + TH110/CL110</td><td>Modbus TCP / Zigbee</td><td>Cu + wireless</td><td>60 s</td></tr>
+   <tr><td>Time sync</td><td>NTP / PTP from GPS clock</td><td>LAN</td><td>±1 ms</td></tr></tbody></table>`;
+  return `<div class="scr-h"><h1>Communication architecture</h1><p>Layered network per IEC 62443 zones and conduits. Device status lamps come from switch port and Modbus diagnostics.</p></div>
+  <div class="box"><h2>Network topology</h2><div class="bd scroll">${g}</div></div>
+  <div class="grid g2" style="margin-top:12px"><div class="box"><h2>Protocols</h2><div class="bd scroll">${proto}</div></div>
+  <div class="box"><h2>Cybersecurity provisions</h2><div class="bd note"><ul class="seq" style="list-style:disc">
+   <li>Zones: enterprise/DMZ, supervisory, control, field. Only the firewall conduit crosses to Level 3; no direct internet access.</li>
+   <li>BMENOC0321 IP forwarding separates the device network from the control network.</li>
+   <li>Managed switches: port security, unused ports disabled, VLANs per zone, RSTP, SNMPv3, syslog.</li>
+   <li>M580 Achilles Level 2 certified CPU; application password, memory protection, FTP/HTTP services disabled.</li>
+   <li>Role-based access on HMI (Viewer / Operator / Engineer / Admin), audit trail of every command and setpoint.</li>
+   <li>Remote access via VPN with MFA, read-only by default, session logging; time-limited engineering access.</li>
+   <li>Hardened Windows images, application whitelisting, offline antivirus updates, backup &amp; restore plan.</li></ul></div></div></div>`;
+}
+
+let IO=null;
+function scrIO(){
+  IO=IO||buildIO();
+  const areas=[...new Set(IO.map(r=>r.area))], types=[...new Set(IO.map(r=>r.type))];
+  const cnt=(f)=>IO.filter(f).length;
+  const sum=`<table class="t"><thead><tr><th>Area</th>${types.map(t=>`<th class="n">${t}</th>`).join('')}<th class="n">Total</th></tr></thead><tbody>${areas.map(a=>`<tr><td>${a}</td>${types.map(t=>`<td class="n">${cnt(r=>r.area===a&&r.type===t)||''}</td>`).join('')}<td class="n"><b>${cnt(r=>r.area===a)}</b></td></tr>`).join('')}<tr><td><b>Total</b></td>${types.map(t=>`<td class="n"><b>${cnt(r=>r.type===t)}</b></td>`).join('')}<td class="n"><b>${IO.length}</b></td></tr></tbody></table>`;
+  return `<div class="scr-h"><h1>I/O and signal list</h1><p>Generated from the same plant model as the screens. Hard-wired DI/DO land on M580 X80 and Edge I/O NTS modules; communicated signals come from relays, meters, inverters, BESS and controllers.</p></div>
+  <div class="box"><h2>Signal count by area and type</h2><div class="bd scroll">${sum}</div></div>
+  <div class="box" style="margin-top:12px"><h2>Signal list<span class="sp"><button class="btn" id="copyCsv">Copy as CSV</button></span></h2><div class="bd">
+   <div class="fsearch"><input id="ioQ" type="search" placeholder="Search tag or description" aria-label="Search signals"><select id="ioArea" aria-label="Area"><option value="">All areas</option>${areas.map(a=>`<option>${a}</option>`).join('')}</select><select id="ioType" aria-label="Type"><option value="">All types</option>${types.map(a=>`<option>${a}</option>`).join('')}</select><span class="note" id="ioN"></span></div>
+   <div class="scroll" style="max-height:560px;overflow:auto" id="ioTbl"></div><textarea id="csvOut" hidden aria-label="CSV export" style="width:100%;height:140px;margin-top:8px;font-family:var(--f-num);font-size:11px"></textarea></div></div>`;
+}
+function renderIO(){
+  const q=($('#ioQ').value||'').toLowerCase(),a=$('#ioArea').value,t=$('#ioType').value;
+  const rows=IO.filter(r=>(!a||r.area===a)&&(!t||r.type===t)&&(!q||(r.tag+' '+r.desc+' '+r.src).toLowerCase().includes(q)));
+  $('#ioN').textContent=`${rows.length} of ${IO.length} signals`;
+  $('#ioTbl').innerHTML=`<table class="t"><thead><tr><th>Tag</th><th>Area</th><th>Equipment</th><th>Description</th><th>Type</th><th>Source / module</th><th>Protocol</th><th>Unit</th><th>Alarm</th></tr></thead><tbody>${rows.slice(0,600).map(r=>`<tr><td class="tag">${r.tag}</td><td>${r.area}</td><td>${r.eq}</td><td>${r.desc}</td><td>${r.type}</td><td>${r.src}</td><td>${r.proto}</td><td>${r.unit}</td><td>${r.alarm}</td></tr>`).join('')}</tbody></table>${rows.length>600?'<div class="note">Showing the first 600 rows; refine the search to see the rest.</div>':''}`;
+}
+
+/* ---------- faceplates & commands ---------- */
+let selTimer=null;
+function modal(html){$('#modalHost').innerHTML=`<div class="modal" id="mdl"><div class="fp" role="dialog" aria-modal="true">${html}</div></div>`;$('#mdl').addEventListener('click',e=>{if(e.target.id==='mdl'||e.target.dataset.close!==undefined)closeModal();});paint();}
+function closeModal(){$('#modalHost').innerHTML='';clearTimeout(selTimer);}
+function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2600);}
+function canOperate(){if(role()==='viewer'){toast('Viewer level cannot issue commands. Log in as Operator.');return false;}return true;}
+
+function gisFaceplate(id){
+  const g=PLANT.gis.find(x=>x.id===id);
+  const perms=()=>{const closed=ST.brk[id];return [
+    [ST.lr[id]==='REMOTE','Panel selector in REMOTE'],[!ST.es[id],'Earthing switch open'],[true,'Relay healthy, no lockout (86) active'],[true,'Spring charged, SF6 pressure normal'],
+    ...(id==='AH1'?[[closed||ST.dg.some(d=>d.run),'DG running and synchronised by DG controller']]:[]),...(id==='AH2'?[[closed||M.busLive,'Bus live (PV cannot form the grid)']]:[]),...(id==='AH3'?[[true,'PCS ready in grid-forming mode']]:[]),
+    [role()!=='viewer','User level Operator or above']];};
+  const render=()=>{const p=perms(),ok=p.every(x=>x[0]),closed=ST.brk[id];
+    modal(`<h3>${g.id} · ${g.name} · ${g.qf}<button data-close aria-label="Close">×</button></h3><div class="bd">
+     <div class="row">${sv('cbt_'+id)}${sv('lr_'+id)}${sv('esp_'+id)}${sv('rly_'+id)}</div>
+     ${kv([['P',`p_${id}`],['I',`i_${id}`],['U (kV)',`u_${id}`],['PF',`pf_${id}`]])}
+     <div><b>Permissives</b><div class="perm" style="margin-top:4px">${p.map(x=>`<span class="${x[0]?'ok':'no'}"></span><span>${x[1]}</span>`).join('')}</div></div>
+     <div class="row"><button class="btn" id="sel" ${ok?'':'disabled'}>Select</button><button class="btn ${closed?'red':'grn'}" id="opr" disabled>${closed?'Open':'Close'} ${g.qf}</button><button class="btn" id="cnl">Cancel</button>${ST.trip[id]?'<button class="btn" id="rst">Reset trip</button>':''}</div>
+     <div class="note" id="selNote">Select-before-operate: select, then operate within 10 s.</div>
+     ${role()==='engineer'?`<div class="row"><button class="btn" id="lr">Toggle L/R (sim)</button><button class="btn" id="es">Toggle earth switch (sim)</button><button class="btn" id="trp">Simulate protection trip</button></div>`:''}</div>`);
+    $('#sel')?.addEventListener('click',()=>{$('#opr').disabled=false;$('#sel').disabled=true;$('#selNote').textContent='Selected. Operate within 10 s.';selTimer=setTimeout(()=>{if($('#opr')){$('#opr').disabled=true;$('#sel').disabled=false;$('#selNote').textContent='Selection timed out.';}},10000);});
+    $('#opr')?.addEventListener('click',()=>{if(!canOperate())return;ST.brk[id]=!closed;logEv('GIS',`${id} ${g.qf}`,`${closed?'Open':'Close'} command executed`,role().toUpperCase());toast(`${g.qf} ${closed?'opened':'closed'}`);tick(0);closeModal();});
+    $('#cnl').addEventListener('click',closeModal);
+    $('#rst')?.addEventListener('click',()=>{delete ST.trip[id];logEv('GIS',id,'Lockout reset',role().toUpperCase());tick(0);render();});
+    $('#lr')?.addEventListener('click',()=>{ST.lr[id]=ST.lr[id]==='REMOTE'?'LOCAL':'REMOTE';tick(0);render();});
+    $('#es')?.addEventListener('click',()=>{if(ST.brk[id]){toast('Open the VCB before earthing (interlock).');return;}ST.es[id]=!ST.es[id];tick(0);render();});
+    $('#trp')?.addEventListener('click',()=>{ST.trip[id]=true;ST.brk[id]=false;logEv('GIS',id,'Protection trip 50/51 (simulated)');tick(0);render();});
+  };render();
+}
+function acbFaceplate(k){
+  let name,get,set;
+  if(k.startsWith('DG')){const i=Number(k[2]);name=`${PLANT.dg[i].id} ${PLANT.dg[i].acb} ACB`;get=()=>ST.dg[i].acb;set=x=>ST.dg[i].acb=x;}
+  else {name={PV:'PV LV ACB 1250 A',BESS:'BESS LV ACB 1000 A',PRES:'LVDB President incomer 1000 A',PM:'LVDB Prime Minister incomer 1000 A',AUX:'Aux panel incomer 200 A'}[k];get=()=>ST.acb[k];set=x=>ST.acb[k]=x;}
+  const c=get();
+  modal(`<h3>${name}<button data-close aria-label="Close">×</button></h3><div class="bd"><div class="row"><span class="pill" data-state="${c?'closed':'open'}">${c?'Closed':'Open'}</span><span class="pill" data-state="off">REMOTE</span></div>
+   <div class="row"><button class="btn ${c?'red':'grn'}" id="go">${c?'Open':'Close'}</button><button class="btn" data-close>Cancel</button></div><div class="note">Command goes through the PLC interlock logic before reaching the breaker.</div></div>`);
+  $('#go').addEventListener('click',()=>{if(!canOperate())return;set(!c);logEv('LV',name,`${c?'Open':'Close'} command executed`,role().toUpperCase());toast(`${name} ${c?'opened':'closed'}`);tick(0);closeModal();});
+}
+
+function handleClick(a){
+  const [k,x,y]=a.split(':');
+  if(k==='go') return show(x);
+  if(k==='gis') return gisFaceplate(x);
+  if(k==='acb') return acbFaceplate(x);
+  if(k==='ack'){const al=ALARMS.find(z=>z.id===x);if(al){al.ack=true;logEv(al.area,al.tag,'Alarm acknowledged',role().toUpperCase());if(al.state==='RTN')ALARMS.splice(ALARMS.indexOf(al),1);}tick(0);renderAlarmTables();return;}
+  if(!canOperate()) return;
+  if(k==='dg'){const d=ST.dg[x],id=PLANT.dg[x].id;
+    if(y==='start'){d.run=true;d.startT=Date.now();logEv('DG',id,'Manual start',role().toUpperCase());}
+    if(y==='stop'){d.run=false;logEv('DG',id,'Manual stop',role().toUpperCase());}
+    if(y==='mode'){d.mode={AUTO:'MANUAL',MANUAL:'OFF',OFF:'AUTO'}[d.mode];logEv('DG',id,`Mode → ${d.mode}`,role().toUpperCase());}
+    toast(`${id}: ${y==='mode'?'mode '+d.mode:y}`);}
+  if(k==='inv'){ST.inv[x].on=!ST.inv[x].on;logEv('PV',PLANT.inv[x].id,ST.inv[x].on?'Start command':'Stop command',role().toUpperCase());toast(`${PLANT.inv[x].id} ${ST.inv[x].on?'started':'stopped'}`);}
+  if(k==='pcs'){ST.pcs[x].on=!ST.pcs[x].on;logEv('BESS',`PCS${+x+1}`,ST.pcs[x].on?'Start command':'Stop command',role().toUpperCase());}
+  if(k==='mccb'){ST.mccb[x][y]=!ST.mccb[x][y];logEv('LV',`LVDB ${x} F${+y+1}`,ST.mccb[x][y]?'MCCB closed':'MCCB opened',role().toUpperCase());}
+  if(k==='ppc'){ST.ppc.mode=x;logEv('PPC','PPC',`Mode → ${x}`,role().toUpperCase());}
+  if(k==='fire'){const s=ST.fire[x];s.state=s.state==='FIRE'?'NORMAL':'FIRE';logEv('FIRE',x,s.state==='FIRE'?'Zone alarm test':'Zone reset',role().toUpperCase());}
+  if(k==='seq'){const li=$$('#seqList li');const i=li.findIndex(l=>l.dataset.state==='act');li.forEach((l,j)=>l.dataset.state=j<i+1?'done':j===i+1?'act':'');if(i+1>=li.length)li.forEach(l=>l.dataset.state='');}
+  tick(0);
+}
+
+/* ---------- navigation, loop ---------- */
+let cur='overview';
+function show(id){
+  cur=id; $$('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.id===id));
+  const f={overview:scrOverview,gis:scrGIS,gen:scrGen,bess:scrBESS,pv:scrPV,lv:scrLV,aux:scrAux,ppc:scrPPC,alarms:scrAlarms,trends:scrTrends,network:scrNetwork,io:scrIO}[id];
+  $('#main').innerHTML=f(); try{localStorage.setItem('vs_scr',id);}catch(e){}
+  if(id==='alarms'){renderAlarmTables();$('#alArea').addEventListener('change',renderAlarmTables);$('#ackAll2').addEventListener('click',ackAll);}
+  if(id==='io'){renderIO();['ioQ','ioArea','ioType'].forEach(i=>$('#'+i).addEventListener('input',renderIO));
+    $('#copyCsv').addEventListener('click',()=>{const csv=['Tag,Area,Equipment,Description,Type,Source,Protocol,Unit,Alarm',...IO.map(r=>[r.tag,r.area,r.eq,r.desc,r.type,r.src,r.proto,r.unit,r.alarm].map(s=>`"${String(s).replace(/"/g,'""')}"`).join(','))].join('\n');
+      const ta=$('#csvOut');ta.value=csv;navigator.clipboard?.writeText(csv).then(()=>toast(`Copied ${IO.length} signals as CSV`)).catch(()=>{ta.hidden=false;ta.select();toast('Clipboard blocked: CSV shown below, press Ctrl+C');});if(!navigator.clipboard){ta.hidden=false;ta.select();}});}
+  if(id==='ppc'){$('#ppcForm').addEventListener('submit',e=>{e.preventDefault();if(role()!=='engineer'){toast('Engineer level required to write setpoints.');return;}
+    const g=i=>Number($('#'+i).value);Object.assign(ST.ppc,{socStart:g('sp_socStart'),socStop:g('sp_socStop'),socMin:g('sp_socMin'),pvLimit:g('sp_pvLimit'),dgMinLoad:g('sp_dgMin')});logEv('PPC','Setpoints',`DG start ${ST.ppc.socStart} %, stop ${ST.ppc.socStop} %, shed ${ST.ppc.socMin} %, PV limit ${ST.ppc.pvLimit} %`,'ENGINEER');toast('Setpoints written');});}
+  if(id==='trends') renderTrends();
+  tick(0);
+}
+function ackAll(){ALARMS.forEach(a=>a.ack=true);for(let i=ALARMS.length-1;i>=0;i--) if(ALARMS[i].state==='RTN') ALARMS.splice(i,1);logEv('SYS','ALL','All alarms acknowledged',role().toUpperCase());tick(0);if(cur==='alarms')renderAlarmTables();}
+let lastT=Date.now();
+function tick(dtOverride){
+  const now=Date.now(),dt=dtOverride===0?0:(now-lastT)/1000;if(dtOverride!==0)lastT=now;
+  step(dt);evalAlarms();compute();
+  // extra derived bindings
+  V.tx_dg_r='1.5 MVA 11/0.4 kV Dyn11';V.tx_dg_t=fmt(45+M.dgP/1500*40,1);V.tx_dg_f='GIS AH1';V.dg_e=fmt(ST.e.dg+(ST.dg.some(d=>d.run)?0:0));V.dg_fuelL=fmt(ST.e.dg*0.27);V.aux_tx='100 kVA 11/0.4 kV';V.f_PRES='GIS AH4 · 11 kV';V.f_PM='GIS AH6 · 11 kV';V.rmu_PRES='GIS-12 · AH1/AH2/AH3';V.rmu_PM='GIS-12 · AH1/AH2/AH3';
+  paint();
+  const sr=$('#socRect');if(sr) sr.setAttribute('width',(72*ST.soc/100).toFixed(1));
+  ['lblMin','lblStart','lblStop'].forEach((i,n)=>{const e=$('#'+i);if(e)e.textContent=[ST.ppc.socMin,ST.ppc.socStart,ST.ppc.socStop][n];});
+  $$('[data-str]').forEach(el=>{const [i,k]=el.dataset.str.split(':').map(Number);const base=M.inv[i].p/PLANT.inv[i].kw*13.4;const val=base*strBase[i][k];el.textContent=fmt(val,1);
+    const r=base>0.3?strBase[i][k]:1;el.style.background=r<0.7?'var(--crit)':r<0.9?'var(--warn)':base>0.3?'var(--ok)':'var(--panel-2)';el.style.color=r<0.7?'#fff':base>0.3?'#fff':'var(--muted)';});
+  const tb=$('#tabs [data-id=alarms] .num');if(tb)tb.textContent=V.tab_alarm?` (${V.tab_alarm})`:'';
+  if(now-lastHist>60000){lastHist=now;HIST.push({t:now,load:M.load,pv:M.pv,dg:M.dgP,bess:M.bess,soc:ST.soc,G:M.G});if(HIST.length>1500)HIST.shift();if(cur==='trends')renderTrends();}
+  if(cur==='alarms'&&dtOverride!==0&&!document.activeElement?.closest?.('#alTable')) renderAlarmTables();
+}
+
+function boot(){
+  $('#tabs').innerHTML=SCREENS.map(s=>`<button role="tab" data-id="${s.id}" aria-selected="false">${s.name}${s.id==='alarms'?'<span class="num"></span>':''}</button>`).join('');
+  $('#tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b)show(b.dataset.id);});
+  document.addEventListener('click',e=>{const t=e.target.closest('[data-click]');if(t){e.preventDefault();handleClick(t.dataset.click);}});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+  $('#ackAll').addEventListener('click',ackAll);
+  $('#role').addEventListener('change',()=>logEv('SYS','HMI',`User level changed to ${role()}`,role().toUpperCase()));
+  // seed history of events/alarms
+  logEv('SYS','HMI','SCADA runtime started on HMI 1 (HMI 2 standby)');
+  ALARMS.push({id:'hist1',prio:3,area:'SYS',tag:'VS_SYS_NTS6_COMM',desc:'Edge I/O NTS island 6 (PV area 3) comm restored after 4 s',t:nowStr(new Date(Date.now()-5400e3)),state:'RTN',ack:false});
+  step(0);evalAlarms();
+  let start='overview';const h=(location.hash||'').slice(1);try{start=SCREENS.some(s=>s.id===h)?h:(localStorage.getItem('vs_scr')||'overview');}catch(e){}
+  if(!SCREENS.some(s=>s.id===start)) start='overview';
+  show(start); setInterval(()=>tick(),2000);
+  addEventListener('resize',()=>{if(cur==='trends')renderTrends();});
+}
+boot();
+</script>
