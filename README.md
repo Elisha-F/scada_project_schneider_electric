@@ -8,6 +8,9 @@ PM5320 meters, PAS600 panel servers and EcoStruxure Machine SCADA Expert.
 |---|---|
 | `hmi/villa-somalia-scada.html` | Interactive HMI mock-up with 12 screens. Open it in a browser. A simulated plant model drives all values. |
 | `docs/villa-somalia-io-list.csv` | Signal list (958 signals) generated from the same plant model. |
+| `drawings/BFE-PR-26-01-SCADA-Drawing-Set.pdf` | A3 drawing set, Rev A draft: 001 SCADA architecture, 002 communication network, 003 PV interface, 004 BESS interface, 005 SCADA overview SLD. Single-sheet PDFs and SVGs are next to it. |
+| `tools/build-drawings.js` | Regenerates the drawing set: `node tools/build-drawings.js` (needs Playwright/Chromium) |
+| `docs/Villa-Somalia-SCADA-Client-Requirements.docx` | Client requirements register and compliance matrix (`node tools/build-requirements-docx.js`) |
 | `tools/export-io-list.js` | Regenerates the CSV: `node tools/export-io-list.js > docs/villa-somalia-io-list.csv` |
 
 ## Plant basis (drawing BFE/PR/26/01)
